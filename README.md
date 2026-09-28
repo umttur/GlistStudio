@@ -11,6 +11,7 @@ It expects the layout the Glist install scripts create: `C:\dev\glist` on Window
 - C++ code intelligence from clangd: diagnostics, completion, hover, signature help, go to definition, references, rename, quick fixes, formatting, outline, and header/source switching (Alt+O)
 - Save, build, run, and stop commands with live output, colored as the compiler colors it, where file locations open the file at that line
 - A debugger: breakpoints, stepping, variables, the call stack, and values on hover, through lldb-dap or GDB
+- A terminal next to the output, in the project folder, with the same tools on `PATH` as builds
 - Automatic CMake source-list updates when files are created, renamed, or removed
 - C++ class generation with matching header and source files
 - Project creation from the bundled GlistApp, GlistConsoleApp, and GlistGUIApp templates, into the `myglistapps` folder of the open project's workspace
@@ -32,6 +33,12 @@ The debugger is an external program that speaks the Debug Adapter Protocol:
 - macOS: `lldb-dap` from Xcode or its command line tools, found through `xcrun`.
 - Linux: `lldb-dap` from the LLVM packages (also under the older name `lldb-vscode`, often with a version suffix), or GDB 14 or newer.
 - Windows: the Glist toolchain does not include a debugger yet. Install LLVM, which comes with `lldb-dap`, or GDB 14 or newer from MSYS2, and put it on `PATH`.
+
+## Terminal
+
+The Terminal tab beside Output runs a shell in the project folder: PowerShell on Windows, and your shell (`$SHELL`) on macOS and Linux. It has the environment builds have, so on Windows the Glist `clang`, `mingw32-make` and `cmake` from `zbin` work as typed. Ctrl+` shows and hides it, the + button starts a new one, and opening another project moves it there.
+
+Copy and paste work as elsewhere: Cmd+C and Cmd+V on macOS; on Windows and Linux, Ctrl+C copies selected text and otherwise stops the running command, and Ctrl+V pastes. The studio's own shortcuts, such as F5 to run and Ctrl+S to save, keep working while the terminal has focus.
 
 ## Themes
 
@@ -100,6 +107,7 @@ Pushing a tag such as `v0.2.0` runs `.github/workflows/release.yml`, which build
 - `src/cmake-language.ts`: CMake syntax highlighting
 - `src/output-format.ts`: Colors and file links in the Output panel
 - `src/fonts.ts`: Font settings
+- `src/terminal.ts`: The terminal tab (xterm.js); the shell behind it runs through node-pty in `src/studio.ts`
 - `src/icons.ts` and `src/file-icons.ts`: Interface icons (Codicons) and file icons (Seti); see `THIRD_PARTY_NOTICES.md`
 - `src/renderer.ts`: Editor and interface behavior
 - `src/index.html` and `src/index.css`: Interface structure and styling
