@@ -51,7 +51,7 @@ export const applyTheme = (theme: StudioTheme): void => {
   activeTheme = theme;
   try { window.localStorage.setItem(themeKey, theme.id); } catch { /* Storage may be unavailable. */ }
   const root = document.documentElement;
-  Object.entries(interfaceVariables(theme.palette)).forEach(([name, value]) => root.style.setProperty(name, value));
+  Object.entries(interfaceVariables(theme.palette, theme.kind)).forEach(([name, value]) => root.style.setProperty(name, value));
   root.dataset.kind = theme.kind;
   monaco.editor.defineTheme(theme.id, editorThemeData(theme));
   monaco.editor.setTheme(theme.id);

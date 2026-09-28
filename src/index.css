@@ -1,24 +1,30 @@
 /* Colors come from the active theme (src/themes.ts), which sets the base
    variables below; these defaults are Glist Dark. Shades are mixed from them. */
 :root {
-  --ui-bg: #1e1e1e;
-  --ui-chrome: #181818;
-  --ui-raised: #252526;
-  --ui-fg: #cccccc;
-  --ui-fg-muted: #858585;
-  --ui-border: #2b2b2b;
-  --ui-accent: #007acc;
+  --ui-bg: #151820;
+  --ui-chrome: #0f1116;
+  --ui-raised: #1c2029;
+  --ui-fg: #c7cdd9;
+  --ui-fg-muted: #7b8399;
+  --ui-border: #232733;
+  --ui-accent: #2f6fe0;
   --ui-on-accent: #ffffff;
-  --ui-danger: #f48771;
-  --ui-success: #26733b;
+  --ui-danger: #ff6b81;
+  --ui-success: #1f8048;
   --ui-on-success: #ffffff;
-  --ui-warning: #cca700;
+  --ui-warning: #f2c14e;
   --ui-contrast: #ffffff;
   --ui-shadow: #0008;
-  --code-string: #a7d17a;
-  --code-keyword: #c792ea;
-  --code-function: #82aaff;
-  --code-type: #61c7c1;
+  --code-string: #a6da7a;
+  --code-keyword: #b794f6;
+  --code-function: #74b4ff;
+  --code-type: #ffcb6b;
+  --ansi-red: #ff6b81;
+  --ansi-green: #a6da7a;
+  --ansi-yellow: #f2c14e;
+  --ansi-blue: #74b4ff;
+  --ansi-magenta: #b794f6;
+  --ansi-cyan: #89ddff;
 
   --ui-fg-strong: color-mix(in srgb, var(--ui-fg) 25%, var(--ui-contrast));
   --ui-fg-faint: color-mix(in srgb, var(--ui-fg) 38%, var(--ui-chrome));
@@ -420,12 +426,12 @@ kbd { margin-left: 5px; padding: 2px 5px; border: 1px solid var(--ui-border-stro
 /* xterm.js paints its viewport black, and it can run a little past the last row. */
 .terminal-host .xterm .xterm-viewport { background-color: transparent; }
 .ansi-black { color: var(--ui-fg-muted); }
-.ansi-red { color: var(--ui-danger); }
-.ansi-green { color: var(--code-string); }
-.ansi-yellow { color: var(--ui-warning); }
-.ansi-blue { color: var(--code-function); }
-.ansi-magenta { color: var(--code-keyword); }
-.ansi-cyan { color: var(--code-type); }
+.ansi-red { color: var(--ansi-red); }
+.ansi-green { color: var(--ansi-green); }
+.ansi-yellow { color: var(--ansi-yellow); }
+.ansi-blue { color: var(--ansi-blue); }
+.ansi-magenta { color: var(--ansi-magenta); }
+.ansi-cyan { color: var(--ansi-cyan); }
 .ansi-white { color: var(--ui-fg-strong); }
 .ansi-bold { font-weight: 700; }
 .output-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); cursor: pointer; }

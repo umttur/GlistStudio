@@ -260,7 +260,7 @@ export const editorThemeData = (studioTheme: StudioTheme): monaco.editor.IStanda
 };
 
 // The interface colors, as the custom properties index.css reads.
-export const interfaceVariables = (palette: ThemePalette): Record<string, string> => ({
+export const interfaceVariables = (palette: ThemePalette, kind: ThemeKind): Record<string, string> => ({
   '--ui-bg': palette.background,
   '--ui-chrome': palette.chrome,
   '--ui-raised': palette.raised,
@@ -277,15 +277,66 @@ export const interfaceVariables = (palette: ThemePalette): Record<string, string
   '--code-keyword': palette.keyword,
   '--code-function': palette.function,
   '--code-type': palette.type,
+  ...Object.fromEntries(Object.entries(ansiColors(palette, kind)).map(([name, color]) => [`--ansi-${name}`, color])),
 });
 
-// The terminal's colors. Programs pick from eight colors and their bright
-// variants; these are the ones the Output panel shows them in.
-export const terminalTheme = (palette: ThemePalette): ITheme => {
-  const colors = {
-    black: palette.muted, red: palette.danger, green: palette.string, yellow: palette.warning,
-    blue: palette.function, magenta: palette.keyword, cyan: palette.type, white: palette.text,
+const hueAndSaturation = (color: string): { hue: number; saturation: number } => {
+  const full = mix(color, color, 0);
+  const [r, g, b] = [1, 3, 5].map((index) => parseInt(full.slice(index, index + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const chroma = max - min;
+  if (chroma === 0) return { hue: 0, saturation: 0 };
+  const saturation = chroma / (1 - Math.abs(2 * lightness - 1));
+  let hue = max === r ? ((g - b) / chroma) % 6 : max === g ? (b - r) / chroma + 2 : (r - g) / chroma + 4;
+  hue = (hue * 60 + 360) % 360;
+  return { hue, saturation };
+};
+
+const ansiHues = { red: 0, yellow: 50, green: 110, cyan: 185, blue: 220, magenta: 300 };
+type AnsiHue = keyof typeof ansiHues;
+// VS Code's terminal colors, for a hue a theme has nothing near.
+const ansiDefaults: Record<ThemeKind, Record<AnsiHue, string>> = {
+  dark: { red: '#f14c4c', yellow: '#e5e510', green: '#23d18b', cyan: '#29b8db', blue: '#3b8eea', magenta: '#d670d6' },
+  light: { red: '#cd3131', yellow: '#949800', green: '#107c10', cyan: '#0598bc', blue: '#0451a5', magenta: '#bc05bc' },
+};
+
+// The eight colors programs print in, for the terminal and the Output panel.
+// Each is the theme's color for that role (errors are red, strings green) when
+// its hue fits, and otherwise the theme's color nearest in hue, so that cyan
+// stays cyan whatever a theme uses it for in code.
+export const ansiColors = (palette: ThemePalette, kind: ThemeKind): Record<AnsiHue | 'black' | 'white', string> => {
+  const roles: Record<AnsiHue, string> = {
+    red: palette.danger, green: palette.string, yellow: palette.warning, blue: palette.function,
+    magenta: palette.keyword, cyan: palette.type,
   };
+  const candidates = [
+    palette.danger, palette.string, palette.warning, palette.function, palette.keyword, palette.type, palette.property,
+    palette.number, palette.parameter, palette.macro, palette.constant, palette.control, palette.operator,
+  ].filter((color): color is string => Boolean(color)).map((color) => ({ color, ...hueAndSaturation(color) }))
+    .filter((candidate) => candidate.saturation > 0.2);
+  const distance = (hue: number, name: AnsiHue): number =>
+    Math.min(Math.abs(hue - ansiHues[name]), 360 - Math.abs(hue - ansiHues[name]));
+  const nearest = (name: AnsiHue): string => {
+    const role = hueAndSaturation(roles[name]);
+    if (role.saturation > 0.2 && distance(role.hue, name) < 45) return roles[name];
+    let best = ansiDefaults[kind][name];
+    let bestDistance = 45;
+    candidates.forEach(({ color, hue }) => {
+      if (distance(hue, name) < bestDistance) { best = color; bestDistance = distance(hue, name); }
+    });
+    return best;
+  };
+  return {
+    black: palette.muted, red: nearest('red'), green: nearest('green'), yellow: nearest('yellow'),
+    blue: nearest('blue'), magenta: nearest('magenta'), cyan: nearest('cyan'), white: palette.text,
+  };
+};
+
+// The terminal's colors, with bright variants the same as the plain ones.
+export const terminalTheme = (palette: ThemePalette, kind: ThemeKind): ITheme => {
+  const colors = ansiColors(palette, kind);
   return {
     background: palette.background,
     foreground: palette.text,

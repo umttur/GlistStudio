@@ -123,7 +123,7 @@ const terminalHost = element<HTMLDivElement>('#terminal');
 const newTerminalButton = element<HTMLButtonElement>('#new-terminal');
 const clearOutputButton = element<HTMLButtonElement>('#clear-output');
 const studioTerminal = new StudioTerminal(terminalHost);
-onThemeChange((theme) => studioTerminal.setTheme(terminalTheme(theme.palette)));
+onThemeChange((theme) => studioTerminal.setTheme(terminalTheme(theme.palette, theme.kind)));
 onFontsChange((fonts) => studioTerminal.setFont(codeFontStack(fonts), panelFontSize(fonts)));
 
 const panelShowing = (view: PanelView): boolean => !appShell.classList.contains('output-hidden') && panelView === view;

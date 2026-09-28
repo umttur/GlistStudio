@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { builtInThemes, editorThemeData, importVsCodeTheme, restyleSemanticTokens } from '../src/themes.ts';
+import { ansiColors, builtInThemes, editorThemeData, importVsCodeTheme, restyleSemanticTokens } from '../src/themes.ts';
 
 const hexColor = /^#[0-9a-f]{6}$/i;
 const ids = new Set();
@@ -60,6 +60,14 @@ assert.equal(ruleFor('method.deprecated').fontStyle, 'strikethrough');
 // Without a control color, control flow keeps the keyword color.
 const nord = builtInThemes.find((theme) => theme.id === 'nord');
 assert.equal(editorThemeData(nord).rules.find((rule) => rule.token === 'keyword.if').foreground, nord.palette.keyword.slice(1));
+
+// Program output keeps its hues: Glist Dark's types are gold, but cyan stays cyan.
+for (const theme of builtInThemes) {
+  for (const [name, value] of Object.entries(ansiColors(theme.palette, theme.kind))) assert.match(value, hexColor, `${theme.id} ${name}`);
+}
+assert.equal(ansiColors(glistDark.palette, 'dark').red, glistDark.palette.danger);
+assert.equal(ansiColors(glistDark.palette, 'dark').cyan, glistDark.palette.operator);
+assert.equal(ansiColors(nord.palette, 'dark').green, nord.palette.string);
 
 // Semantic tokens keep only the first styled modifier each has.
 const legend = ['declaration', 'definition', 'deprecated', 'deduced', 'readonly', 'static'];
