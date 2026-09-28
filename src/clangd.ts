@@ -8,6 +8,7 @@ import type {
 } from 'vscode-languageserver-protocol';
 import { t } from './localization';
 import { baseName, pathUri } from './paths';
+import { restyleSemanticTokens, styledModifiers } from './themes';
 
 export interface ClangdHost {
   // A model for reading, created without a tab when needed. Null if the file cannot be read.
@@ -495,10 +496,10 @@ export class ClangdClient {
     if (legend) {
       languages.registerDocumentSemanticTokensProvider(language, {
         onDidChange: this.semanticTokensChanged.event,
-        getLegend: () => legend,
+        getLegend: () => ({ tokenTypes: legend.tokenTypes, tokenModifiers: styledModifiers }),
         provideDocumentSemanticTokens: async (model, _lastResultId, token) => {
           const tokens = await this.query<SemanticTokens>(model, 'textDocument/semanticTokens/full', {}, token);
-          return tokens && { resultId: tokens.resultId, data: new Uint32Array(tokens.data) };
+          return tokens && { resultId: tokens.resultId, data: restyleSemanticTokens(tokens.data, legend.tokenModifiers) };
         },
         releaseDocumentSemanticTokens: () => undefined,
       });

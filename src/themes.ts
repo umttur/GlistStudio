@@ -40,6 +40,10 @@ export interface ThemePalette {
   property: string;
   macro: string;
   constant: string;
+  // Optional: if, for, return and the like, apart from other keywords; and
+  // operators and punctuation. Without them, keywords and plain text.
+  control?: string;
+  operator?: string;
 }
 
 export interface StudioTheme {
@@ -58,12 +62,14 @@ const theme = (id: string, name: string, kind: ThemeKind, palette: ThemePalette)
 
 // Colors come from each theme's published palette.
 export const builtInThemes: StudioTheme[] = [
+  // The interface and the editor share one navy base; the cursor has the orange of the Glist logo.
   theme('glist-dark', 'Glist Dark', 'dark', {
-    background: '#1e1e1e', chrome: '#181818', raised: '#252526', text: '#cccccc', muted: '#858585', border: '#2b2b2b',
-    accent: '#007acc', onAccent: '#ffffff', danger: '#f48771', success: '#26733b', warning: '#cca700',
-    editor: '#111318', editorText: '#cdd6e5', lineHighlight: '#171b23', selection: '#304661', cursor: '#f2b84b', lineNumber: '#475166',
-    comment: '#68758b', keyword: '#c792ea', string: '#a7d17a', number: '#f7b267', type: '#61c7c1', function: '#82aaff',
-    variable: '#cdd6e5', parameter: '#e9c46a', property: '#89ddff', macro: '#f78c6c', constant: '#f7b267',
+    background: '#151820', chrome: '#0f1116', raised: '#1c2029', text: '#c7cdd9', muted: '#7b8399', border: '#232733',
+    accent: '#2f6fe0', onAccent: '#ffffff', danger: '#ff6b81', success: '#1f8048', warning: '#f2c14e',
+    editor: '#151820', editorText: '#d4dae6', lineHighlight: '#1b1f29', selection: '#29395c', cursor: '#ff9f43', lineNumber: '#434a60',
+    comment: '#5f6b87', keyword: '#b794f6', string: '#a6da7a', number: '#ff9e64', type: '#ffcb6b', function: '#74b4ff',
+    variable: '#d4dae6', parameter: '#ff8f8f', property: '#7fdbca', macro: '#ff7eb6', constant: '#ff9e64',
+    control: '#ff7eb6', operator: '#89ddff',
   }),
   theme('glist-light', 'Glist Light', 'light', {
     background: '#ffffff', chrome: '#f5f5f5', raised: '#ffffff', text: '#3b3b3b', muted: '#6b7280', border: '#dedede',
@@ -157,30 +163,72 @@ const luminance = (color: string): number => {
 };
 
 
+// Monaco's C++ grammar names each keyword (keyword.if, keyword.int), so they
+// can be colored by what they do.
+const controlKeywords = [
+  'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'goto', 'try', 'catch',
+  'throw', 'co_await', 'co_return', 'co_yield',
+];
+const typeKeywords = [
+  'void', 'bool', 'char', 'char8_t', 'char16_t', 'char32_t', 'wchar_t', 'short', 'int', 'long', 'signed', 'unsigned',
+  'float', 'double', 'auto',
+];
+const constantKeywords = ['true', 'false', 'nullptr'];
+
+// clangd's semantic token types, and the palette color of each.
+const semanticColors = (palette: ThemePalette): Record<string, string> => ({
+  namespace: palette.type, type: palette.type, class: palette.type, struct: palette.type, enum: palette.type,
+  interface: palette.type, typeParameter: palette.type, concept: palette.type,
+  function: palette.function, method: palette.function, variable: palette.variable, parameter: palette.parameter,
+  property: palette.property, enumMember: palette.constant, macro: palette.macro,
+});
+
+// The semantic token modifiers themes style, most important first. A token
+// keeps only the first it has (see restyleSemanticTokens).
+export const styledModifiers = ['deprecated', 'readonly', 'static'];
+
 // Token names cover Monaco's C++ grammar and clangd's semantic tokens.
 const paletteRules = (palette: ThemePalette): monaco.editor.ITokenThemeRule[] => {
   const rule = (token: string, color: string, fontStyle?: string): monaco.editor.ITokenThemeRule =>
     ({ token, foreground: hex(color), fontStyle });
+  const semantic = semanticColors(palette);
   return [
     rule('', palette.editorText),
     rule('comment', palette.comment, 'italic'),
     rule('keyword', palette.keyword),
+    ...controlKeywords.map((word) => rule(`keyword.${word}`, palette.control ?? palette.keyword)),
+    ...typeKeywords.map((word) => rule(`keyword.${word}`, palette.type)),
+    ...constantKeywords.map((word) => rule(`keyword.${word}`, palette.constant)),
+    rule('keyword.this', palette.parameter, 'italic'),
     rule('keyword.directive', palette.macro),
     rule('string', palette.string),
     rule('string.escape', palette.constant),
     rule('number', palette.number),
     rule('annotation', palette.macro),
-    ...['namespace', 'type', 'class', 'struct', 'enum', 'interface', 'typeParameter', 'concept']
-      .map((token) => rule(token, palette.type)),
-    rule('function', palette.function),
-    rule('method', palette.function),
-    rule('variable', palette.variable),
-    rule('parameter', palette.parameter),
-    rule('property', palette.property),
-    rule('enumMember', palette.constant),
+    rule('delimiter', palette.operator ?? palette.editorText),
     rule('constant', palette.constant),
-    rule('macro', palette.macro),
+    ...Object.entries(semantic).map(([token, color]) => rule(token, color)),
+    rule('parameter', palette.parameter, 'italic'),
+    // Constants that are variables: const and constexpr ones.
+    rule('variable.readonly', palette.constant),
+    rule('property.readonly', palette.constant),
+    ...['variable', 'property', 'function', 'method'].map((token) => rule(`${token}.static`, semantic[token], 'italic')),
+    ...Object.entries(semantic).map(([token, color]) => rule(`${token}.deprecated`, color, 'strikethrough')),
   ];
+};
+
+// Monaco styles a semantic token by its type and modifiers joined in the
+// legend's order, and matches theme rules by prefix, so 'variable.readonly'
+// would never match clangd's 'variable.declaration.readonly'. This keeps only
+// the first styled modifier of each token, in clangd's relative token data.
+export const restyleSemanticTokens = (data: ArrayLike<number>, legendModifiers: string[]): Uint32Array => {
+  const bits = styledModifiers.map((name) => legendModifiers.indexOf(name));
+  const result = Uint32Array.from(data);
+  for (let index = 4; index < result.length; index += 5) {
+    const kept = bits.findIndex((bit) => bit >= 0 && (result[index] & (2 ** bit)) !== 0);
+    result[index] = kept < 0 ? 0 : 2 ** kept;
+  }
+  return result;
 };
 
 export const editorThemeData = (studioTheme: StudioTheme): monaco.editor.IStandaloneThemeData => {
@@ -200,6 +248,11 @@ export const editorThemeData = (studioTheme: StudioTheme): monaco.editor.IStanda
       'editorWidget.background': palette.raised,
       'editorSuggestWidget.background': palette.raised,
       'editorHoverWidget.background': palette.raised,
+      // Brackets take a color by depth.
+      'editorBracketHighlight.foreground1': palette.type,
+      'editorBracketHighlight.foreground2': palette.keyword,
+      'editorBracketHighlight.foreground3': palette.function,
+      'editorBracketHighlight.unexpectedBracket.foreground': palette.danger,
       focusBorder: palette.accent,
       ...studioTheme.editorColors,
     },
@@ -264,6 +317,8 @@ const scopeTokens: Array<[RegExp, Array<keyof ThemePalette>]> = [
   [/^string/, ['string']],
   [/^constant\.numeric/, ['number']],
   [/^(keyword\.control\.directive|meta\.preprocessor|entity\.name\.function\.preprocessor)/, ['macro']],
+  [/^keyword\.control/, ['control']],
+  [/^keyword\.operator/, ['operator']],
   [/^(keyword|storage)/, ['keyword']],
   [/^(entity\.name\.(type|class|struct|namespace)|support\.(type|class)|entity\.other\.inherited-class)/, ['type']],
   [/^(entity\.name\.function|support\.function|meta\.function-call)/, ['function']],
@@ -337,6 +392,9 @@ export const importVsCodeTheme = (source: string, fallbackName: string): StudioT
     rules,
     palette: {
       ...base,
+      // Only the theme's own, so it never shows in Glist Dark's.
+      control: undefined,
+      operator: undefined,
       ...code,
       background: editor,
       chrome,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { builtInThemes, editorThemeData, importVsCodeTheme } from '../src/themes.ts';
+import { builtInThemes, editorThemeData, importVsCodeTheme, restyleSemanticTokens } from '../src/themes.ts';
 
 const hexColor = /^#[0-9a-f]{6}$/i;
 const ids = new Set();
@@ -43,7 +43,33 @@ assert.equal(imported.palette.function, '#6f42c1');
 assert.ok(!('not.a.color' in imported.editorColors));
 assert.ok(imported.rules.some((rule) => rule.token === 'parameter' && rule.foreground === 'e36209'));
 assert.ok(imported.rules.some((rule) => rule.token === 'property' && rule.foreground === '005cc5'));
-assert.equal(importVsCodeTheme('{ "type": "dark", "colors": {} }', 'Plain').name, 'Plain');
+assert.equal(imported.palette.control, '#d73a49', 'keyword.control colors control flow');
+const plain = importVsCodeTheme('{ "type": "dark", "colors": {} }', 'Plain');
+assert.equal(plain.name, 'Plain');
+assert.equal(plain.palette.control, undefined, "no control color from Glist Dark's palette");
+assert.equal(plain.palette.operator, undefined, "no operator color from Glist Dark's palette");
+
+// Keywords by what they do, in Glist Dark.
+const glistDark = builtInThemes[0];
+const ruleFor = (token) => editorThemeData(glistDark).rules.find((rule) => rule.token === token);
+assert.equal(ruleFor('keyword.return').foreground, glistDark.palette.control.slice(1));
+assert.equal(ruleFor('keyword.int').foreground, glistDark.palette.type.slice(1));
+assert.equal(ruleFor('keyword.nullptr').foreground, glistDark.palette.constant.slice(1));
+assert.equal(ruleFor('variable.readonly').foreground, glistDark.palette.constant.slice(1));
+assert.equal(ruleFor('method.deprecated').fontStyle, 'strikethrough');
+// Without a control color, control flow keeps the keyword color.
+const nord = builtInThemes.find((theme) => theme.id === 'nord');
+assert.equal(editorThemeData(nord).rules.find((rule) => rule.token === 'keyword.if').foreground, nord.palette.keyword.slice(1));
+
+// Semantic tokens keep only the first styled modifier each has.
+const legend = ['declaration', 'definition', 'deprecated', 'deduced', 'readonly', 'static'];
+const bit = (name) => 2 ** legend.indexOf(name);
+const restyled = restyleSemanticTokens([
+  1, 4, 6, 8, bit('declaration') | bit('readonly') | bit('static'),
+  0, 9, 3, 2, bit('static') | bit('deprecated'),
+  2, 0, 5, 1, bit('definition'),
+], legend);
+assert.deepEqual([...restyled], [1, 4, 6, 8, 2, 0, 9, 3, 2, 1, 2, 0, 5, 1, 0]);
 assert.throws(() => importVsCodeTheme('not json', 'Broken'));
 
 console.log('Theme tests passed.');

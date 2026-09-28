@@ -239,6 +239,8 @@ const editor = monaco.editor.create(editorHost, {
   automaticLayout: true,
   // Colors from clangd for functions, types, members and the like.
   'semanticHighlighting.enabled': true,
+  // Matching brackets share a color, by how deep they are nested.
+  bracketPairColorization: { enabled: true },
   minimap: { enabled: true, scale: 1 },
   // Room for breakpoints.
   glyphMargin: true,
