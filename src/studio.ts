@@ -381,12 +381,19 @@ const resolveToolchain = (projectRoot: string): Toolchain => {
   };
 };
 
-const processEnvironment = (toolchain: Toolchain): NodeJS.ProcessEnv => ({
-  ...process.env,
-  PATH: toolchain.toolBin
-    ? `${toolchain.toolBin}${path.delimiter}${process.env.PATH ?? ''}`
-    : process.env.PATH,
-});
+// Builds, clangd, the debugger, the app and the terminal all get this. Windows
+// spells the variable Path, so it is replaced rather than joined by a second one.
+const processEnvironment = (toolchain: Toolchain): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {};
+  let searchPath = '';
+  Object.entries(process.env).forEach(([key, value]) => {
+    if (key.toUpperCase() === 'PATH') searchPath = value ?? '';
+    else env[key] = value;
+  });
+  const cmakeBin = path.isAbsolute(toolchain.cmake) ? path.dirname(toolchain.cmake) : undefined;
+  env.PATH = [toolchain.toolBin, cmakeBin, searchPath].filter(Boolean).join(path.delimiter);
+  return env;
+};
 
 // Release for Build and Run; Debug, with symbols and no optimization, for the debugger.
 type BuildType = 'Release' | 'Debug';
