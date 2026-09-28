@@ -2,6 +2,10 @@
 // The explicit ESM entry prevents a runtime `define is not defined` failure.
 // eslint-disable-next-line import/no-unresolved
 import * as monaco from 'monaco-editor/editor/editor.api';
+// Semantic tokens for whole documents, which clangd sends. Monaco's own
+// semanticTokens feature loads only the variant for visible ranges.
+// eslint-disable-next-line import/no-unresolved
+import 'monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens';
 import appIconUrl from '../assets/glistengine.ico';
 import { applyTheme, getActiveTheme, setUpThemePicker } from './appearance';
 import { ClangdClient } from './clangd';
@@ -164,6 +168,8 @@ const requestName = (titleKey: TranslationKey, labelKey: TranslationKey, initial
 
 const editor = monaco.editor.create(editorHost, {
   automaticLayout: true,
+  // Colors from clangd for functions, types, members and the like.
+  'semanticHighlighting.enabled': true,
   fontFamily: "'Cascadia Code', Consolas, monospace",
   fontSize: 14,
   lineHeight: 22,

@@ -2,8 +2,9 @@
 import * as monaco from 'monaco-editor/editor/editor.api';
 import type {
   CodeAction, Command, CompletionItem, CompletionList, Diagnostic, DocumentHighlight, DocumentSymbol, Hover,
-  InitializeResult, Location, LocationLink, MarkedString, MarkupContent, Position, PublishDiagnosticsParams, Range, ServerCapabilities, SignatureHelp, SymbolInformation, TextEdit,
-  WorkDoneProgressBegin, WorkDoneProgressEnd, WorkDoneProgressReport, WorkspaceEdit,
+  InitializeResult, Location, LocationLink, MarkedString, MarkupContent, Position, PublishDiagnosticsParams, Range,
+  SemanticTokens, ServerCapabilities, SignatureHelp, SymbolInformation, TextEdit, WorkDoneProgressBegin,
+  WorkDoneProgressEnd, WorkDoneProgressReport, WorkspaceEdit,
 } from 'vscode-languageserver-protocol';
 import { t } from './localization';
 import { baseName, pathUri } from './paths';
@@ -131,6 +132,8 @@ export class ClangdClient {
   private readonly progress = new Map<number | string, string>();
   private capabilities: ServerCapabilities | null = null;
   private providersRegistered = false;
+  // Tells Monaco to ask for semantic tokens again.
+  private readonly semanticTokensChanged = new monaco.Emitter<void>();
   private session = 0;
   private rootPath: string | null = null;
   // clangd only looks for a missing compile_commands.json every so often, so
@@ -171,7 +174,10 @@ export class ClangdClient {
         capabilities: {
           general: { positionEncodings: ['utf-16'] },
           window: { workDoneProgress: true },
-          workspace: { applyEdit: true, workspaceEdit: { documentChanges: true }, configuration: true },
+          workspace: {
+            applyEdit: true, workspaceEdit: { documentChanges: true }, configuration: true,
+            semanticTokens: { refreshSupport: true },
+          },
           textDocument: {
             synchronization: { didSave: true },
             completion: {
@@ -206,6 +212,16 @@ export class ClangdClient {
               isPreferredSupport: true,
             },
             publishDiagnostics: { relatedInformation: true, tagSupport: { valueSet: [1, 2] } },
+            semanticTokens: {
+              requests: { full: true },
+              tokenTypes: [
+                'namespace', 'type', 'class', 'enum', 'interface', 'struct', 'typeParameter', 'parameter', 'variable',
+                'property', 'enumMember', 'function', 'method', 'macro', 'keyword', 'modifier', 'comment', 'string',
+                'number', 'operator', 'concept',
+              ],
+              tokenModifiers: ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'defaultLibrary'],
+              formats: ['relative'],
+            },
           },
         },
       });
@@ -220,6 +236,7 @@ export class ClangdClient {
     this.host.status('clangd', false);
     this.host.log(`${result.serverInfo?.version?.replace(/\s*\(.*$/, '') ?? 'clangd'} ${t('clangdRunning')}.`);
     this.tracked.forEach((model) => this.open(model));
+    this.semanticTokensChanged.fire();
   }
 
   // Keeps clangd in step with a model the user has open, until it is disposed.
@@ -350,6 +367,9 @@ export class ClangdClient {
         return (params as { items: unknown[] }).items.map((): null => null);
       case 'workspace/applyEdit':
         return { applied: await this.applyWorkspaceEdit((params as { edit: WorkspaceEdit }).edit) };
+      case 'workspace/semanticTokens/refresh':
+        this.semanticTokensChanged.fire();
+        return null;
       case 'window/workDoneProgress/create':
       case 'client/registerCapability':
       case 'client/unregisterCapability':
@@ -470,6 +490,19 @@ export class ClangdClient {
         };
       },
     });
+
+    const legend = capabilities.semanticTokensProvider?.legend;
+    if (legend) {
+      languages.registerDocumentSemanticTokensProvider(language, {
+        onDidChange: this.semanticTokensChanged.event,
+        getLegend: () => legend,
+        provideDocumentSemanticTokens: async (model, _lastResultId, token) => {
+          const tokens = await this.query<SemanticTokens>(model, 'textDocument/semanticTokens/full', {}, token);
+          return tokens && { resultId: tokens.resultId, data: new Uint32Array(tokens.data) };
+        },
+        releaseDocumentSemanticTokens: () => undefined,
+      });
+    }
 
     languages.registerHoverProvider(language, {
       provideHover: async (model, position, token) => {
