@@ -7,10 +7,10 @@ import * as monaco from 'monaco-editor/editor/editor.api';
 // eslint-disable-next-line import/no-unresolved
 import 'monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens';
 import appIconUrl from '../assets/glistengine.ico';
-import { applyTheme, getActiveTheme, setUpThemePicker } from './appearance';
+import { applyTheme, getActiveTheme, onThemeChange, setUpThemePicker } from './appearance';
 import { ClangdClient } from './clangd';
 import { registerCmakeLanguage } from './cmake-language';
-import { setUpFontSettings } from './fonts';
+import { codeFontStack, onFontsChange, panelFontSize, setUpFontSettings } from './fonts';
 import { formatOutput, newOutputStyle } from './output-format';
 import { fileIconElement } from './file-icons';
 import { icon, placeIcons } from './icons';
@@ -18,6 +18,8 @@ import { Debugger } from './debugger';
 import { setHostPlatform } from './host';
 import { baseName, isWithin, joinPath, pathUri, uriPath } from './paths';
 import { isMac, primaryKey, shortcutLabel } from './shortcuts';
+import { StudioTerminal } from './terminal';
+import { terminalTheme } from './themes';
 import { applyLanguage, getLanguage, t, type TranslationKey } from './localization';
 import './index.css';
 
@@ -114,10 +116,42 @@ const toggleView = (view: SidebarView): void => {
 };
 
 const toggleExplorer = (): void => toggleView('explorer');
+// The panel under the editor has two tabs: the Output of builds and runs, and a terminal.
+type PanelView = 'output' | 'terminal';
+let panelView: PanelView = 'output';
+const terminalHost = element<HTMLDivElement>('#terminal');
+const newTerminalButton = element<HTMLButtonElement>('#new-terminal');
+const clearOutputButton = element<HTMLButtonElement>('#clear-output');
+const studioTerminal = new StudioTerminal(terminalHost);
+onThemeChange((theme) => studioTerminal.setTheme(terminalTheme(theme.palette)));
+onFontsChange((fonts) => studioTerminal.setFont(codeFontStack(fonts), panelFontSize(fonts)));
+
+const panelShowing = (view: PanelView): boolean => !appShell.classList.contains('output-hidden') && panelView === view;
+
 const setOutputVisible = (visible: boolean): void => {
   appShell.classList.toggle('output-hidden', !visible);
+  if (visible && panelView === 'terminal') studioTerminal.show();
 };
-const toggleOutput = (): void => setOutputVisible(appShell.classList.contains('output-hidden'));
+
+const showPanel = (view: PanelView): void => {
+  panelView = view;
+  document.querySelectorAll<HTMLButtonElement>('.output-tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.panel === view);
+  });
+  output.hidden = view !== 'output';
+  terminalHost.hidden = view !== 'terminal';
+  newTerminalButton.hidden = view !== 'terminal';
+  const clearKey: TranslationKey = view === 'terminal' ? 'clearTerminal' : 'clearOutput';
+  clearOutputButton.dataset.i18nTitle = clearKey;
+  clearOutputButton.title = t(clearKey);
+  setOutputVisible(true);
+};
+
+// A tab that is showing hides the panel; otherwise the panel opens on it.
+const togglePanel = (view: PanelView): void => {
+  if (panelShowing(view)) setOutputVisible(false);
+  else showPanel(view);
+};
 
 const zoomLevels = [50, 67, 80, 90, 100, 110, 125, 150, 175, 200] as const;
 const defaultZoom = 100;
@@ -948,6 +982,7 @@ const openSelectedProject = async (selected: GlistProjectInfo): Promise<void> =>
   expandedDirectories.clear();
   projectRootLabel.textContent = selected.name.toUpperCase();
   document.title = `${selected.name} - Glist Studio`;
+  studioTerminal.projectChanged();
   await loadProjectTree(); updateButtons();
   clearOutput(`Glist Studio\n${t('openedProject')}: ${selected.root}\n`);
   if (!selected.hasCMakeProject) appendOutput(`${t('noCmake')}\n`);
@@ -1010,6 +1045,7 @@ const buildProject = async (): Promise<void> => {
   if (!activeProject || isBuildRunning || isStarting) return;
   await whileStarting(async () => {
     if (!(await saveProjectFiles())) return;
+    showPanel('output');
     appendOutput('\n── BUILD ────────────────────────────────────────\n');
     const result = await window.glistAPI.buildProject();
     clangd.buildFinished();
@@ -1022,6 +1058,7 @@ const runProject = async (): Promise<void> => {
   if (!activeProject || isRunRunning || isBuildRunning || isStarting) return;
   await whileStarting(async () => {
     if (!(await saveProjectFiles())) return;
+    showPanel('output');
     const result = await window.glistAPI.runProject();
     clangd.buildFinished();
     appendOutput(result.message, result.success ? 'success' : 'error');
@@ -1033,6 +1070,7 @@ const debugProject = async (): Promise<void> => {
   await whileStarting(async () => {
     if (!(await saveProjectFiles())) return;
     showView('debug');
+    showPanel('output');
     appendOutput('\n── DEBUG ────────────────────────────────────────\n');
     await debug.start();
     clangd.buildFinished();
@@ -1113,8 +1151,10 @@ const configureMenus = (): void => {
         { kind: 'heading', label: t('layout') },
         item(t(shell.classList.contains('sidebar-hidden') || sidebarView !== 'explorer' ? 'showExplorer' : 'hideExplorer'),
           toggleExplorer, { shortcut: 'Ctrl+B' }),
-        item(t(shell.classList.contains('output-hidden') ? 'showOutput' : 'hideOutput'),
-          toggleOutput, { shortcut: 'Ctrl+J' }),
+        item(t(panelShowing('output') ? 'hideOutput' : 'showOutput'), () => togglePanel('output'), { shortcut: 'Ctrl+J' }),
+        item(t(panelShowing('terminal') ? 'hideTerminal' : 'showTerminal'), () => togglePanel('terminal'), {
+          shortcut: isMac ? 'Control+`' : 'Ctrl+`',
+        }),
         { kind: 'separator' },
         { kind: 'heading', label: t('zoom') },
         item(t('zoomIn'), () => changeZoom(1), {
@@ -1278,7 +1318,14 @@ newFileButton.addEventListener('click', createFile);
 newFolderButton.addEventListener('click', createFolder);
 deleteEntryButton.addEventListener('click', deleteSelectedEntry);
 refreshButton.addEventListener('click', loadProjectTree);
-element<HTMLButtonElement>('#clear-output').addEventListener('click', () => clearOutput());
+clearOutputButton.addEventListener('click', () => {
+  if (panelView === 'terminal') studioTerminal.clear();
+  else clearOutput();
+});
+newTerminalButton.addEventListener('click', () => { void studioTerminal.restart(); });
+document.querySelectorAll<HTMLButtonElement>('.output-tab').forEach((tab) => {
+  tab.addEventListener('click', () => showPanel(tab.dataset.panel === 'terminal' ? 'terminal' : 'output'));
+});
 element<HTMLButtonElement>('#close-explorer').addEventListener('click', () => setSidebarVisible(false));
 debugButton.addEventListener('click', debugProject);
 debugStartButton.addEventListener('click', debugProject);
@@ -1361,7 +1408,9 @@ window.addEventListener('keydown', (event) => {
   else if (primaryKey(event) && event.key.toLowerCase() === 'o') { event.preventDefault(); chooseProject(); }
   else if (primaryKey(event) && event.shiftKey && event.key.toLowerCase() === 'b') { event.preventDefault(); buildProject(); }
   else if (primaryKey(event) && event.key.toLowerCase() === 'b') { event.preventDefault(); toggleExplorer(); }
-  else if (primaryKey(event) && event.key.toLowerCase() === 'j') { event.preventDefault(); toggleOutput(); }
+  else if (primaryKey(event) && event.key.toLowerCase() === 'j') { event.preventDefault(); togglePanel('output'); }
+  // By the key's place left of 1, which types a different character on some layouts.
+  else if (event.ctrlKey && event.code === 'Backquote') { event.preventDefault(); togglePanel('terminal'); }
   else if (event.shiftKey && event.key === 'F5') { event.preventDefault(); stopProject(); }
   else if (event.key === 'F5') { event.preventDefault(); if (debug.state === 'paused') debug.continue(); else runProject(); }
   else if (event.key === 'F6') { event.preventDefault(); debugProject(); }

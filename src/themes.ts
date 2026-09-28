@@ -1,5 +1,6 @@
 // eslint-disable-next-line import/no-unresolved
 import type * as monaco from 'monaco-editor/editor/editor.api';
+import type { ITheme } from '@xterm/xterm';
 
 // A theme colors both the interface and the code. The interface takes a
 // handful of base colors and derives the rest in index.css.
@@ -224,6 +225,25 @@ export const interfaceVariables = (palette: ThemePalette): Record<string, string
   '--code-function': palette.function,
   '--code-type': palette.type,
 });
+
+// The terminal's colors. Programs pick from eight colors and their bright
+// variants; these are the ones the Output panel shows them in.
+export const terminalTheme = (palette: ThemePalette): ITheme => {
+  const colors = {
+    black: palette.muted, red: palette.danger, green: palette.string, yellow: palette.warning,
+    blue: palette.function, magenta: palette.keyword, cyan: palette.type, white: palette.text,
+  };
+  return {
+    background: palette.background,
+    foreground: palette.text,
+    cursor: palette.cursor,
+    cursorAccent: palette.background,
+    selectionBackground: palette.selection,
+    ...colors,
+    brightBlack: colors.black, brightRed: colors.red, brightGreen: colors.green, brightYellow: colors.yellow,
+    brightBlue: colors.blue, brightMagenta: colors.magenta, brightCyan: colors.cyan, brightWhite: colors.white,
+  };
+};
 
 // Importing VS Code color themes
 

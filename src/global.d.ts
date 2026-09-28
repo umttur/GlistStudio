@@ -81,6 +81,10 @@ interface Window {
     startDebugging(): Promise<GlistDebugStart>;
     sendDebug(message: unknown): Promise<void>;
     stopDebugging(): Promise<void>;
+    startTerminal(columns: number, rows: number): Promise<GlistProcessResult>;
+    writeTerminal(data: string): Promise<void>;
+    resizeTerminal(columns: number, rows: number): Promise<void>;
+    stopTerminal(): Promise<void>;
     onBuildOutput(callback: (text: string) => void): () => void;
     onBuildStatus(callback: (status: { running: boolean; label: string }) => void): () => void;
     onRunOutput(callback: (text: string) => void): () => void;
@@ -90,5 +94,7 @@ interface Window {
     onSaveAndClose(callback: () => void): () => void;
     onDebugMessage(callback: (message: unknown) => void): () => void;
     onDebugStatus(callback: (status: GlistClangdStatus) => void): () => void;
+    onTerminalData(callback: (data: string) => void): () => void;
+    onTerminalExit(callback: (exitCode: number) => void): () => void;
   };
 }

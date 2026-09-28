@@ -38,6 +38,14 @@ let activeTheme = allThemes().find((theme) => theme.id === savedThemeId()) ?? bu
 
 export const getActiveTheme = (): StudioTheme => activeTheme;
 
+const themeListeners: Array<(theme: StudioTheme) => void> = [];
+
+// For parts that are colored in code rather than CSS, such as the terminal.
+export const onThemeChange = (listener: (theme: StudioTheme) => void): void => {
+  themeListeners.push(listener);
+  listener(activeTheme);
+};
+
 // Recolors the interface, the editor and the window frame.
 export const applyTheme = (theme: StudioTheme): void => {
   activeTheme = theme;
@@ -50,6 +58,7 @@ export const applyTheme = (theme: StudioTheme): void => {
   void window.glistAPI.setTheme({
     kind: theme.kind, background: theme.palette.background, chrome: theme.palette.chrome, text: theme.palette.text,
   });
+  themeListeners.forEach((listener) => listener(theme));
 };
 
 const previewCard = (theme: StudioTheme, onRemove: () => void): HTMLLabelElement => {

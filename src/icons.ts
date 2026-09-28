@@ -1,3 +1,4 @@
+import add from '@vscode/codicons/src/icons/add.svg';
 import chevronRight from '@vscode/codicons/src/icons/chevron-right.svg';
 import circleFilled from '@vscode/codicons/src/icons/circle-filled.svg';
 import clearAll from '@vscode/codicons/src/icons/clear-all.svg';
@@ -24,6 +25,7 @@ import trash from '@vscode/codicons/src/icons/trash.svg';
 // Interface icons: Codicons, the set VS Code uses (CC BY 4.0, see THIRD_PARTY_NOTICES.md).
 // They are inline SVG, so they take the color of the text around them.
 const icons = {
+  add,
   'chevron-right': chevronRight,
   'circle-filled': circleFilled,
   'clear-all': clearAll,

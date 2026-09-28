@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Handler, Handlers } from '../api';
-import { initializeStudio, openProjectAt, stopClangd, stopDebugging, stopProcesses, studio } from '../studio';
+import { initializeStudio, openProjectAt, stopClangd, stopDebugging, stopProcesses, stopTerminal, studio } from '../studio';
 
 export interface WebServerOptions {
   port: number;
@@ -134,7 +134,7 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
     socket.on('close', () => { if (socket === client) client = null; });
   });
 
-  server.on('close', () => { stopProcesses(); stopClangd(); stopDebugging(); });
+  server.on('close', () => { stopProcesses(); stopClangd(); stopDebugging(); stopTerminal(); });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(options.port, '127.0.0.1', () => resolve(server));

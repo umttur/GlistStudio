@@ -14,6 +14,9 @@ export const mainConfig: Configuration = {
     rules,
   },
   plugins,
+  // node-pty finds its binaries and a worker script by path, so it stays out of
+  // the bundle; forge.config.ts copies it into the app.
+  externals: { 'node-pty': 'commonjs node-pty' },
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
   },

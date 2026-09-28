@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import { availableParallelism, homedir, userInfo } from 'node:os';
 import path from 'node:path';
+import type { IPty } from 'node-pty';
 import type { Handlers } from './api';
 import { findDebugAdapter } from './debug-adapters';
 import { MessageProcess } from './message-process';
@@ -82,6 +83,7 @@ const messages = {
     unsavedChanges: 'Some files have unsaved changes.', saveAndClose: 'Save and Close',
     closeWithoutSaving: 'Close Without Saving', cancel: 'Cancel',
     terminalMissing: 'No terminal was found. Set the TERMINAL environment variable to the one you use.',
+    terminalFailed: 'The terminal could not be started',
   },
   tr: {
     noProject: 'Önce bir Glist projesi açın.', invalidName: 'Geçerli bir dosya veya klasör adı girin.',
@@ -111,6 +113,7 @@ const messages = {
     unsavedChanges: 'Bazı dosyalarda kaydedilmemiş değişiklikler var.', saveAndClose: 'Kaydet ve Kapat',
     closeWithoutSaving: 'Kaydetmeden Kapat', cancel: 'İptal',
     terminalMissing: 'Terminal bulunamadı. Kullandığınız terminali TERMINAL ortam değişkeniyle belirtin.',
+    terminalFailed: 'Terminal başlatılamadı',
   },
 } as const;
 
@@ -661,6 +664,64 @@ const startDebugging = async (): Promise<GlistDebugStart> => {
 
 export const stopDebugging = (): void => debugAdapter.stop();
 
+// The terminal: a shell in the project folder, with the environment builds use.
+// node-pty is loaded on first use, so a platform without it only loses the terminal.
+let terminal: IPty | null = null;
+
+const terminalShell = (): { file: string; args: string[] } => {
+  if (process.platform === 'win32') return { file: 'powershell.exe', args: ['-NoLogo'] };
+  return { file: process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'), args: [] };
+};
+
+const terminalSize = (value: unknown, fallback: number): number => {
+  const size = Math.floor(Number(value));
+  return Number.isFinite(size) ? Math.min(1000, Math.max(2, size)) : fallback;
+};
+
+export const stopTerminal = (): void => {
+  const running = terminal;
+  terminal = null;
+  try { running?.kill(); } catch { /* It has already exited. */ }
+};
+
+const startTerminal = async (columns: number, rows: number): Promise<ProcessResult> => {
+  stopTerminal();
+  const shell = terminalShell();
+  const directory = activeProjectRoot
+    ?? [projectsDirectory(), homedir()].find((candidate) => existsSync(candidate))
+    ?? process.cwd();
+  const toolchain = resolveToolchain(directory);
+  try {
+    const { spawn: spawnTerminal } = await import('node-pty');
+    const child = spawnTerminal(shell.file, shell.args, {
+      name: 'xterm-256color',
+      cols: terminalSize(columns, 80),
+      rows: terminalSize(rows, 24),
+      cwd: directory,
+      env: { ...processEnvironment(toolchain), TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'GlistStudio' },
+    });
+    terminal = child;
+    // A restarted terminal's old shell may still be finishing; only the current one reports.
+    child.onData((data) => { if (terminal === child) sendToRenderer('terminal:data', data); });
+    child.onExit(({ exitCode }) => {
+      if (terminal !== child) return;
+      terminal = null;
+      sendToRenderer('terminal:exit', exitCode);
+    });
+    return { success: true, message: `${path.basename(shell.file)} - ${directory}` };
+  } catch (error) {
+    return { success: false, message: `${msg('terminalFailed')}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+};
+
+const writeTerminal = (data: unknown): void => {
+  if (typeof data === 'string') terminal?.write(data);
+};
+
+const resizeTerminal = (columns: unknown, rows: unknown): void => {
+  try { terminal?.resize(terminalSize(columns, 80), terminalSize(rows, 24)); } catch { /* It has just exited. */ }
+};
+
 const setLanguage = (nextLanguage: AppLanguage): AppLanguage => {
   language = nextLanguage === 'tr' ? 'tr' : 'en';
   return language;
@@ -692,4 +753,8 @@ export const studio: Handlers = {
   startDebugging,
   sendDebug: (message: unknown) => debugAdapter.send(message),
   stopDebugging,
+  startTerminal,
+  writeTerminal,
+  resizeTerminal,
+  stopTerminal,
 };

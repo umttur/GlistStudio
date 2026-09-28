@@ -118,11 +118,13 @@
           <section class="output-panel">
             <div class="output-heading">
               <div class="output-tabs">
-                <button class="output-tab active" type="button" data-i18n="output">OUTPUT</button>
+                <button class="output-tab active" type="button" data-panel="output" data-i18n="output">OUTPUT</button>
+                <button class="output-tab" type="button" data-panel="terminal" data-i18n="terminal">TERMINAL</button>
               </div>
-              <div class="output-tools"><span id="clangd-status" class="process-status" hidden><i></i><span></span></span><span id="process-status" class="process-status"><i></i><span>Ready</span></span><button id="clear-output" class="heading-action" type="button" title="Clear Output" data-i18n-title="clearOutput"><i data-icon="clear-all"></i></button><button id="close-output" class="panel-close" type="button" title="Close Output" data-i18n-title="closeOutput" aria-label="Close Output" data-i18n-aria-label="closeOutput"><i data-icon="close"></i></button></div>
+              <div class="output-tools"><span id="clangd-status" class="process-status" hidden><i></i><span></span></span><span id="process-status" class="process-status"><i></i><span>Ready</span></span><button id="new-terminal" class="heading-action" type="button" title="New Terminal" data-i18n-title="newTerminal" hidden><i data-icon="add"></i></button><button id="clear-output" class="heading-action" type="button" title="Clear Output" data-i18n-title="clearOutput"><i data-icon="clear-all"></i></button><button id="close-output" class="panel-close" type="button" title="Close Output" data-i18n-title="closeOutput" aria-label="Close Output" data-i18n-aria-label="closeOutput"><i data-icon="close"></i></button></div>
             </div>
             <pre id="output" class="output">Glist Studio is ready. Open a project to get started.</pre>
+            <div id="terminal" class="terminal-host" hidden></div>
           </section>
         </section>
       </main>

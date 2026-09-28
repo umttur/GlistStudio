@@ -58,8 +58,11 @@
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.46-24",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron-squirrel-startup": "^1.0.1",
     "monaco-editor": "^0.56.0",
-    "monaco-editor-webpack-plugin": "^7.1.1"
+    "monaco-editor-webpack-plugin": "^7.1.1",
+    "node-pty": "1.2.0-beta.15"
   }
 }

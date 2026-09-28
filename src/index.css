@@ -400,7 +400,8 @@ kbd { margin-left: 5px; padding: 2px 5px; border: 1px solid var(--ui-border-stro
 .output-panel { min-height: 0; overflow: hidden; border-top: 1px solid var(--ui-border); background: var(--ui-chrome); }
 .output-heading { padding: 0 8px 0 12px; border-bottom: 1px solid var(--ui-border); }
 .output-tabs, .output-tools { display: flex; height: 100%; align-items: center; gap: 7px; }
-.output-tab { position: relative; height: 100%; padding: 0 4px; border: 0; color: var(--ui-fg-muted); background: transparent; font-size: 11px; }
+.output-tab { position: relative; height: 100%; padding: 0 4px; border: 0; color: var(--ui-fg-muted); background: transparent; font-size: 11px; cursor: pointer; }
+.output-tab:hover { color: var(--ui-fg); }
 .output-tab.active { color: var(--ui-fg-strong); }
 .output-tab.active::after { position: absolute; right: 3px; bottom: 0; left: 3px; height: 1px; background: var(--ui-accent); content: ""; }
 .process-status { display: flex; align-items: center; color: var(--ui-fg-muted); font-size: 11px; }
@@ -413,6 +414,11 @@ kbd { margin-left: 5px; padding: 2px 5px; border: 1px solid var(--ui-border-stro
 .output { height: calc(100% - 35px); margin: 0; overflow: auto; padding: 10px 14px 24px; color: var(--ui-fg); background: var(--ui-bg); font: var(--font-code-size)/1.55 var(--font-code); white-space: pre-wrap; }
 
 /* ANSI colors in the output, in the theme's own colors. */
+.terminal-host { height: calc(100% - 35px); padding: 6px 0 2px 14px; background: var(--ui-bg); }
+.terminal-host[hidden], .heading-action[hidden] { display: none; }
+.terminal-host .xterm { height: 100%; }
+/* xterm.js paints its viewport black, and it can run a little past the last row. */
+.terminal-host .xterm .xterm-viewport { background-color: transparent; }
 .ansi-black { color: var(--ui-fg-muted); }
 .ansi-red { color: var(--ui-danger); }
 .ansi-green { color: var(--code-string); }

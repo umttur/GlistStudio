@@ -38,6 +38,10 @@ export const invokeChannels: Record<InvokeMethod, string> = {
   startDebugging: 'debug:start',
   sendDebug: 'debug:send',
   stopDebugging: 'debug:stop',
+  startTerminal: 'terminal:start',
+  writeTerminal: 'terminal:write',
+  resizeTerminal: 'terminal:resize',
+  stopTerminal: 'terminal:stop',
 };
 
 export const eventChannels: Record<EventMethod, string> = {
@@ -50,4 +54,6 @@ export const eventChannels: Record<EventMethod, string> = {
   onSaveAndClose: 'app:save-and-close',
   onDebugMessage: 'debug:message',
   onDebugStatus: 'debug:status',
+  onTerminalData: 'terminal:data',
+  onTerminalExit: 'terminal:exit',
 };

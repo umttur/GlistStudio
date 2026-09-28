@@ -44,20 +44,33 @@ const stack = (name: string, fallback: string): string => {
   return trimmed ? `"${trimmed.replace(/["\\]/g, '')}", ${fallback}` : fallback;
 };
 
+// The Output panel and the terminal use the code font, a little smaller.
+export const codeFontStack = (fonts: FontSettings): string => stack(fonts.code, codeFallback);
+export const panelFontSize = (fonts: FontSettings): number => Math.max(10, fonts.codeSize - 2);
+
+const fontListeners: Array<(fonts: FontSettings) => void> = [];
+
+// For parts that set their font in code rather than CSS, such as the terminal.
+export const onFontsChange = (listener: (fonts: FontSettings) => void): void => {
+  fontListeners.push(listener);
+  listener(loadFonts());
+};
+
 export const applyFonts = (editor: monaco.editor.IStandaloneCodeEditor, fonts: FontSettings): void => {
   try { window.localStorage.setItem(storageKey, JSON.stringify(fonts)); } catch { /* Storage may be unavailable. */ }
   const root = document.documentElement.style;
-  root.setProperty('--font-code', stack(fonts.code, codeFallback));
-  root.setProperty('--font-code-size', `${Math.max(10, fonts.codeSize - 2)}px`);
+  root.setProperty('--font-code', codeFontStack(fonts));
+  root.setProperty('--font-code-size', `${panelFontSize(fonts)}px`);
   root.setProperty('--font-ui', stack(fonts.interface, interfaceFallback));
   editor.updateOptions({
-    fontFamily: stack(fonts.code, codeFallback),
+    fontFamily: codeFontStack(fonts),
     fontSize: fonts.codeSize,
     lineHeight: Math.round(fonts.codeSize * 1.57),
     fontLigatures: fonts.ligatures,
   });
   // Monaco measures a font once; a newly chosen one has to be measured again.
   monaco.editor.remeasureFonts();
+  fontListeners.forEach((listener) => listener(fonts));
 };
 
 export interface FontControls {
