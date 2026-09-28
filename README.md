@@ -14,12 +14,17 @@ It expects the layout the Glist install scripts create: `C:\dev\glist` on Window
 - C++ class generation with matching header and source files
 - Project creation from the bundled GlistApp, GlistConsoleApp, and GlistGUIApp templates, into the `myglistapps` folder of the open project's workspace
 - English and Turkish interface languages (English by default)
+- Themes for the whole studio: Glist, Gruvbox, Solarized, Dracula, Nord, One Dark, Monokai and Tokyo Night, plus VS Code color themes imported from their `.json` files
 
 ## C++ code intelligence
 
 Opening a project starts [clangd](https://clangd.llvm.org/). It is looked up on `PATH`; on Windows the Glist `clang64\bin` folder is searched first. Without clangd the editor still works, with syntax highlighting only.
 
 clangd reads the compile flags from `_build/Release/compile_commands.json`, which the build writes. Until a project has been built once, clangd cannot find the engine headers; it restarts on its own after that first build. Definitions in GlistEngine and its plugins open read-only.
+
+## Themes
+
+Settings shows every theme as a small preview; picking one recolors the interface and the editor at once. To add a theme made for VS Code, choose Import a Theme File and pick its `.json` (in a VS Code extension it sits under `themes/`). Its interface colors and code colors are translated, and it stays in the list until removed.
 
 ## Development
 
@@ -76,6 +81,7 @@ Pushing a tag such as `v0.2.0` runs `.github/workflows/release.yml`, which build
 - `src/preload.ts`: Restricted bridge between the renderer and main process
 - `src/clangd-process.ts` and `src/clangd.ts`: clangd process and the language client that feeds Monaco
 - `src/web/` and `scripts/web.ts`: Browser version of the API and the server behind `npm run web`
+- `src/themes.ts` and `src/appearance.ts`: Built-in themes, VS Code theme import, and the theme picker
 - `src/renderer.ts`: Editor and interface behavior
 - `src/index.html` and `src/index.css`: Interface structure and styling
 - `src/localization.ts`: English and Turkish interface text
