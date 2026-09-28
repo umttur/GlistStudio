@@ -64,7 +64,7 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
     ...studio,
     openProject: (projectRoot: string) => openProjectAt(projectRoot),
     openCommandPrompt: unavailable,
-    setTheme: (theme: string) => theme,
+    setTheme: () => undefined,
   };
 
   const server = http.createServer(async (request, response) => {

@@ -13,7 +13,7 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "test": "node tests/cmake.test.mjs && node tests/class-template.test.mjs"
+    "test": "node tests/cmake.test.mjs && node tests/class-template.test.mjs && node tests/themes.test.mjs"
   },
   "keywords": [
     "glist-engine",

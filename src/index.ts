@@ -43,17 +43,17 @@ const registerIpcHandlers = (): void => {
   Object.entries(studio).forEach(([method, handler]: [string, Handler]) => {
     ipcMain.handle(invokeChannels[method as InvokeMethod], (_event, ...args) => handler(...args));
   });
-  ipcMain.handle(invokeChannels.setTheme, (event, requestedTheme: 'dark' | 'light') => {
-    const theme = requestedTheme === 'light' ? 'light' : 'dark';
+  ipcMain.handle(invokeChannels.setTheme, (event, colors: GlistWindowColors) => {
+    const color = (value: unknown, fallback: string): string =>
+      (typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value) ? value : fallback);
     const window = BrowserWindow.fromWebContents(event.sender);
-    nativeTheme.themeSource = theme;
-    window?.setBackgroundColor(theme === 'light' ? '#ffffff' : '#1e1e1e');
+    nativeTheme.themeSource = colors?.kind === 'light' ? 'light' : 'dark';
+    window?.setBackgroundColor(color(colors?.background, '#1e1e1e'));
     if (windowControls === 'right') window?.setTitleBarOverlay({
-      color: theme === 'light' ? '#f5f5f5' : '#181818',
-      symbolColor: theme === 'light' ? '#333333' : '#cccccc',
+      color: color(colors?.chrome, '#181818'),
+      symbolColor: color(colors?.text, '#cccccc'),
       height: 35,
     });
-    return theme;
   });
   ipcMain.handle(invokeChannels.openProject, async () => {
     const defaultPath = projectsDirectory();

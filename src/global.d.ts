@@ -29,7 +29,13 @@ interface GlistClangdStatus {
 
 type GlistTemplate = 'GlistApp' | 'GlistConsoleApp' | 'GlistGUIApp';
 type GlistLanguage = 'en' | 'tr';
-type GlistTheme = 'dark' | 'light';
+// The colors the window frame takes from the theme.
+interface GlistWindowColors {
+  kind: 'dark' | 'light';
+  background: string;
+  chrome: string;
+  text: string;
+}
 
 interface Window {
   glistAPI: {
@@ -53,7 +59,7 @@ interface Window {
     runProject(): Promise<GlistProcessResult>;
     stopProject(): Promise<GlistProcessResult>;
     setLanguage(language: GlistLanguage): Promise<GlistLanguage>;
-    setTheme(theme: GlistTheme): Promise<GlistTheme>;
+    setTheme(colors: GlistWindowColors): Promise<void>;
     setZoomFactor(factor: number): Promise<number>;
     openEngineSite(): Promise<void>;
     startClangd(): Promise<GlistClangdStatus>;

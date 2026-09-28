@@ -3,6 +3,7 @@
 // eslint-disable-next-line import/no-unresolved
 import * as monaco from 'monaco-editor/editor/editor.api';
 import appIconUrl from '../assets/glistengine.ico';
+import { applyTheme, getActiveTheme, setUpThemePicker } from './appearance';
 import { ClangdClient } from './clangd';
 import { setHostPlatform } from './host';
 import { baseName, isWithin, joinPath, pathUri, uriPath } from './paths';
@@ -53,7 +54,6 @@ const inputValue = element<HTMLInputElement>('#input-dialog-value');
 const projectDialog = element<HTMLDialogElement>('#new-project-dialog');
 const settingsDialog = element<HTMLDialogElement>('#settings-dialog');
 const settingsLanguage = element<HTMLSelectElement>('#settings-language');
-const settingsThemes = [...document.querySelectorAll<HTMLInputElement>('input[name="studio-theme"]')];
 element<HTMLImageElement>('#app-icon').src = appIconUrl;
 element<HTMLImageElement>('#welcome-icon').src = appIconUrl;
 
@@ -95,14 +95,7 @@ const loadZoom = (): number => {
 
 let zoomPercentage = loadZoom();
 
-const loadTheme = (): GlistTheme => {
-  try { return window.localStorage.getItem('glist-studio-theme') === 'light' ? 'light' : 'dark'; }
-  catch { return 'dark'; }
-};
-
-let activeTheme = loadTheme();
-document.documentElement.dataset.theme = activeTheme;
-void window.glistAPI.setTheme(activeTheme);
+applyTheme(getActiveTheme());
 
 const setZoom = (percentage: number): void => {
   const closest = zoomLevels.reduce((best, level) => (
@@ -169,52 +162,7 @@ const requestName = (titleKey: TranslationKey, labelKey: TranslationKey, initial
     inputValue.select();
   });
 
-monaco.editor.defineTheme('glist-dark', {
-  base: 'vs-dark',
-  inherit: true,
-  rules: [
-    { token: 'comment', foreground: '68758B', fontStyle: 'italic' },
-    { token: 'keyword', foreground: 'C792EA' },
-    { token: 'string', foreground: 'A7D17A' },
-    { token: 'number', foreground: 'F7B267' },
-    { token: 'type.identifier', foreground: '61C7C1' },
-  ],
-  colors: {
-    'editor.background': '#111318',
-    'editor.foreground': '#CDD6E5',
-    'editorLineNumber.foreground': '#475166',
-    'editorLineNumber.activeForeground': '#9AA7BC',
-    'editorCursor.foreground': '#F2B84B',
-    'editor.selectionBackground': '#304661',
-    'editor.inactiveSelectionBackground': '#263648',
-    'editor.lineHighlightBackground': '#171B23',
-  },
-});
-
-monaco.editor.defineTheme('glist-light', {
-  base: 'vs',
-  inherit: true,
-  rules: [
-    { token: 'comment', foreground: '667085', fontStyle: 'italic' },
-    { token: 'keyword', foreground: '7A3E9D' },
-    { token: 'string', foreground: '437A32' },
-    { token: 'number', foreground: 'A35400' },
-    { token: 'type.identifier', foreground: '087E8B' },
-  ],
-  colors: {
-    'editor.background': '#FFFFFF',
-    'editor.foreground': '#24292F',
-    'editorLineNumber.foreground': '#9BA3AF',
-    'editorLineNumber.activeForeground': '#4B5563',
-    'editorCursor.foreground': '#0969DA',
-    'editor.selectionBackground': '#ADD6FF',
-    'editor.inactiveSelectionBackground': '#DCEBFA',
-    'editor.lineHighlightBackground': '#F6F8FA',
-  },
-});
-
 const editor = monaco.editor.create(editorHost, {
-  theme: activeTheme === 'light' ? 'glist-light' : 'glist-dark',
   automaticLayout: true,
   fontFamily: "'Cascadia Code', Consolas, monospace",
   fontSize: 14,
@@ -227,15 +175,6 @@ const editor = monaco.editor.create(editorHost, {
   scrollBeyondLastLine: false,
   tabSize: 4,
 });
-
-const setTheme = (theme: GlistTheme): void => {
-  activeTheme = theme;
-  document.documentElement.dataset.theme = theme;
-  try { window.localStorage.setItem('glist-studio-theme', theme); } catch { /* Storage may be unavailable. */ }
-  monaco.editor.setTheme(theme === 'light' ? 'glist-light' : 'glist-dark');
-  settingsThemes.forEach((option) => { option.checked = option.value === theme; });
-  void window.glistAPI.setTheme(theme);
-};
 
 // Appends a text node; rewriting textContent made long builds quadratic.
 const appendOutput = (text: string, kind: 'normal' | 'success' | 'error' = 'normal'): void => {
@@ -1248,11 +1187,11 @@ settingsLanguage.addEventListener('change', () => {
   refreshLanguage();
   void window.glistAPI.setLanguage(next);
 });
-settingsThemes.forEach((option) => {
-  option.checked = option.value === activeTheme;
-  option.addEventListener('change', () => {
-    if (option.checked) setTheme(option.value === 'light' ? 'light' : 'dark');
-  });
+setUpThemePicker({
+  options: element<HTMLElement>('#theme-options'),
+  importButton: element<HTMLButtonElement>('#theme-import'),
+  fileInput: element<HTMLInputElement>('#theme-file'),
+  error: element<HTMLElement>('#theme-error'),
 });
 element<HTMLButtonElement>('#project-cancel').addEventListener('click', () => projectDialog.close());
 element<HTMLFormElement>('#new-project-form').addEventListener('submit', async (event) => {

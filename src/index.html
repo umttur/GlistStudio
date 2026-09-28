@@ -137,19 +137,13 @@
         </div>
         <fieldset class="settings-section theme-settings">
           <legend data-i18n="appearance">Appearance</legend>
-          <div class="theme-options">
-            <label class="theme-option">
-              <input type="radio" name="studio-theme" value="dark" />
-              <span class="theme-swatch theme-swatch-dark" aria-hidden="true"><i></i><b></b></span>
-              <span data-i18n="darkTheme">Dark</span>
-            </label>
-            <label class="theme-option">
-              <input type="radio" name="studio-theme" value="light" />
-              <span class="theme-swatch theme-swatch-light" aria-hidden="true"><i></i><b></b></span>
-              <span data-i18n="lightTheme">Light</span>
-            </label>
+          <div id="theme-options" class="theme-options"></div>
+          <div class="theme-import">
+            <button id="theme-import" type="button" data-i18n="importTheme">Import a Theme File...</button>
+            <input id="theme-file" type="file" accept=".json,application/json" hidden />
           </div>
-          <p class="dialog-hint" data-i18n="themeHint">The selected theme is saved for your next session.</p>
+          <p class="dialog-hint" data-i18n="themeHint">Themes color the whole studio. Color themes from VS Code (.json) can be imported.</p>
+          <p id="theme-error" class="dialog-error" role="alert"></p>
         </fieldset>
         <div class="dialog-actions"><button type="button" id="settings-close" class="primary" data-i18n="close">Close</button></div>
       </dialog>
