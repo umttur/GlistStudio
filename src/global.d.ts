@@ -311,6 +311,8 @@ interface Window {
     setLanguage(language: GlistLanguage): Promise<GlistLanguage>;
     setTheme(colors: GlistWindowColors): Promise<void>;
     setZoomFactor(factor: number): Promise<number>;
+    // Whether CMake configures again when its files change.
+    setAutoConfigure(on: boolean): Promise<void>;
     openEngineSite(): Promise<void>;
     startClangd(): Promise<GlistClangdStatus>;
     sendClangd(message: unknown): Promise<void>;
@@ -342,10 +344,13 @@ interface Window {
     gitClone(url: string, name: string): Promise<GlistProcessResult & { root?: string }>;
     onBuildOutput(callback: (text: string) => void): () => void;
     onBuildStatus(callback: (status: { running: boolean; label: string }) => void): () => void;
+    onConfigured(callback: (result: GlistProcessResult) => void): () => void;
     onRunOutput(callback: (text: string) => void): () => void;
     onRunStatus(callback: (status: { running: boolean; exitCode?: number }) => void): () => void;
     onClangdMessage(callback: (message: unknown) => void): () => void;
     onClangdStatus(callback: (status: GlistClangdStatus) => void): () => void;
+    // The compile commands clangd reads changed, after configuring.
+    onCompileCommands(callback: () => void): () => void;
     onSaveAndClose(callback: () => void): () => void;
     onDebugMessage(callback: (message: unknown) => void): () => void;
     onDebugStatus(callback: (status: GlistClangdStatus) => void): () => void;

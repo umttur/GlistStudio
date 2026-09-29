@@ -2326,6 +2326,21 @@ window.addEventListener('beforeunload', (event) => {
 });
 
 window.glistAPI.onBuildOutput((text) => appendOutput(text));
+// Settings > Build: CMake configures again when its files change, unless turned off.
+const autoConfigureInput = element<HTMLInputElement>('#auto-configure');
+autoConfigureInput.checked = ((): boolean => { try { return window.localStorage.getItem('glist-studio-auto-configure') !== 'off'; } catch { return true; } })();
+void window.glistAPI.setAutoConfigure(autoConfigureInput.checked);
+autoConfigureInput.addEventListener('change', () => {
+  try { window.localStorage.setItem('glist-studio-auto-configure', autoConfigureInput.checked ? 'on' : 'off'); } catch { /* Storage may be unavailable. */ }
+  void window.glistAPI.setAutoConfigure(autoConfigureInput.checked);
+});
+window.glistAPI.onCompileCommands(() => clangd.compileCommandsChanged());
+// A failure says where to look.
+window.glistAPI.onConfigured((result) => {
+  clangd.buildFinished();
+  appendOutput(result.message, result.success ? 'success' : 'error');
+  if (!result.success) notify({ text: result.message, kind: 'error', actions: [{ label: t('showOutput'), run: () => showPanel('output') }] });
+});
 window.glistAPI.onBuildStatus((status) => {
   isBuildRunning = status.running; setProcessStatus(status.label, status.running); updateButtons();
 });

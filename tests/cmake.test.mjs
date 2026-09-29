@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { hasGlistSourceLists, pluginsInCmake, synchronizeCmake } from '../src/cmake.ts';
+import { cmakeInputs, hasGlistSourceLists, pluginsInCmake, synchronizeCmake } from '../src/cmake.ts';
 
 const template = readFileSync(new URL('../glistapp-template/GlistApp/CMakeLists.txt', import.meta.url), 'utf8');
 assert.equal(hasGlistSourceLists(template), true);
@@ -55,5 +55,20 @@ list(APPEND OTHER_LIST notAPlugin)
 set(PLUGINS_DIR \${TOP_DIR}/glistplugins)
 set(PLUGINS \${EXTRA} ../escape)
 `), ['gipBox2D', 'gipImGui', 'gipNetworking', 'gipAndroid']);
+
+
+// What CMake read while configuring, from Makefile.cmake.
+assert.deepEqual(cmakeInputs(`# CMAKE generated file: DO NOT EDIT!
+set(CMAKE_DEPENDS_GENERATOR "Unix Makefiles")
+set(CMAKE_MAKEFILE_DEPENDS
+  "CMakeCache.txt"
+  "/home/ada/dev/glist/GlistEngine/engine/CMakeLists.txt"
+  "/home/ada/dev/glist/myglistapps/App/CMakeLists.txt"
+  "CMakeFiles/4.4.3/CMakeSystem.cmake"
+  )
+set(CMAKE_MAKEFILE_OUTPUTS
+  "Makefile"
+  )`), ['CMakeCache.txt', '/home/ada/dev/glist/GlistEngine/engine/CMakeLists.txt', '/home/ada/dev/glist/myglistapps/App/CMakeLists.txt', 'CMakeFiles/4.4.3/CMakeSystem.cmake']);
+assert.deepEqual(cmakeInputs(''), []);
 
 console.log('CMake synchronization tests passed.');

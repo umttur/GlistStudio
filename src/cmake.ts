@@ -101,3 +101,10 @@ export const pluginsInCmake = (cmake: string): string[] => {
   }
   return names;
 };
+
+// The files CMake read while configuring, as its CMakeFiles/Makefile.cmake
+// lists them. Relative ones are relative to the build folder.
+export const cmakeInputs = (makefile: string): string[] => {
+  const block = /set\(CMAKE_MAKEFILE_DEPENDS\s*([\s\S]*?)\)/.exec(makefile);
+  return block ? [...block[1].matchAll(/"([^"]*)"/g)].map((match) => match[1]) : [];
+};

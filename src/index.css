@@ -782,7 +782,9 @@ kbd { margin-left: 5px; padding: 2px 5px; border: 1px solid var(--ui-border-stro
 .push-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .push-time { color: var(--ui-fg-muted); font-size: 11px; }
 .push-commits li.push-nothing { display: block; color: var(--ui-fg-muted); line-height: 24px; }
-.git-settings { padding: 0; border: 0; }
+.git-settings, .build-settings { padding: 0; border: 0; }
+.build-settings legend { padding: 0 8px 0 0; color: var(--ui-fg); font-size: 12px; }
+.studio-dialog .build-settings .checkbox-row { margin-top: 10px; }
 .git-settings legend { padding: 0 8px 0 0; color: var(--ui-fg); font-size: 12px; }
 .studio-dialog .git-toggle { margin-top: 10px; }
 .git-version.missing { color: var(--ui-warning); }

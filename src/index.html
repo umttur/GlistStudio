@@ -278,6 +278,11 @@
           <p class="dialog-hint" data-i18n="themeHint">Themes color the whole studio. Color themes from VS Code (.json) can be imported.</p>
           <p id="theme-error" class="dialog-error" role="alert"></p>
         </fieldset>
+        <fieldset class="settings-section build-settings">
+          <legend data-i18n="buildSettings">Build</legend>
+          <label class="checkbox-row"><input id="auto-configure" type="checkbox" /><span data-i18n="autoConfigure">Configure again when CMake files change</span></label>
+          <p class="dialog-hint" data-i18n="autoConfigureHint">When CMakeLists.txt or another CMake file of the project, the engine or its plugins changes, CMake configures the project again a moment later, so code completion knows new files without a build.</p>
+        </fieldset>
         <fieldset class="settings-section agent-settings">
           <legend data-i18n="agents">Agents</legend>
           <p class="dialog-hint" data-i18n="agentsHint">Coding assistants that work in the Agent tab, in the open project.</p>

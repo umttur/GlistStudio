@@ -248,6 +248,13 @@ export class ClangdClient {
   }
 
   // A build may have written or changed compile_commands.json.
+  // clangd keeps the flags it read for a file, so new ones, such as a plugin's
+  // include folder after configuring, only take effect in a new clangd.
+  compileCommandsChanged(): void {
+    this.restartAfterBuild = false;
+    if (this.rootPath) void this.start(this.rootPath);
+  }
+
   buildFinished(): void {
     if (this.restartAfterBuild && this.rootPath) { void this.start(this.rootPath); return; }
     const model = [...this.tracked][0];

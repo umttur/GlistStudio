@@ -290,6 +290,9 @@ const en = {
   updatedRepository: '{name}: updated from {upstream}.',
   sharedChanges: 'Changes in {name}, which every project that uses it shares. They are committed to its own repository.',
   sharedEdit: '{name} is shared by every project that uses it, so saving changes it for all of them.',
+  buildSettings: 'Build',
+  autoConfigure: 'Configure again when CMake files change',
+  autoConfigureHint: 'When CMakeLists.txt or another CMake file of the project, the engine or its plugins changes, CMake configures the project again a moment later, so code completion knows new files without a build.',
   tookTheirs: '{name}: their version was taken.',
 } as const;
 
@@ -584,6 +587,9 @@ const tr: Record<TranslationKey, string> = {
   updatedRepository: '{name}: {upstream} ile güncellendi.',
   sharedChanges: '{name} içindeki değişiklikler; onu kullanan her proje bunları paylaşır. Kendi deposuna commit edilirler.',
   sharedEdit: '{name}, onu kullanan tüm projelerce paylaşılıyor; kaydetmek hepsi için değiştirir.',
+  buildSettings: 'Derleme',
+  autoConfigure: 'CMake dosyaları değişince yeniden yapılandır',
+  autoConfigureHint: 'Projenin, motorun veya eklentilerinin CMakeLists.txt ya da başka bir CMake dosyası değişince, CMake projeyi kısa süre sonra yeniden yapılandırır; böylece kod tamamlama yeni dosyaları derlemeden tanır.',
   tookTheirs: '{name}: onların sürümü alındı.',
 };
 

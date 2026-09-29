@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, promises as fs, type Dirent } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, promises as fs, watch, type Dirent, type FSWatcher } from 'node:fs';
 import { availableParallelism, homedir, userInfo } from 'node:os';
 import path from 'node:path';
 import type { IPty } from 'node-pty';
@@ -8,7 +9,7 @@ import type { Handlers } from './api';
 import { findDebugAdapter } from './debug-adapters';
 import { MessageProcess } from './message-process';
 import { renderCppClass } from './class-template';
-import { pluginsInCmake, synchronizeCmake, type CmakeChange } from './cmake';
+import { cmakeInputs, pluginsInCmake, synchronizeCmake, type CmakeChange } from './cmake';
 import { createGitService } from './git-service';
 
 // What the backend needs from whoever hosts it: the Electron main process or
@@ -79,6 +80,7 @@ const messages = {
     buildRunning: 'A build is already running.', configuring: 'Configuring', building: 'Building', ready: 'Ready',
     configureFailed: 'CMake configuration stopped with code', buildFailed: 'Build stopped with code',
     buildFolderMoved: 'This build folder was made for {folder}, so it is made again for this project. The first build takes longer.',
+    configured: 'CMake configured.',
     buildSucceeded: 'Build completed successfully.', buildStartFailed: 'Could not start build',
     appRunning: 'The application is already running.', runCancelled: 'Run cancelled',
     executableMissing: 'Build completed, but no executable was found.', launched: 'launched',
@@ -115,6 +117,7 @@ const messages = {
     buildRunning: 'Bir derleme zaten çalışıyor.', configuring: 'Yapılandırılıyor', building: 'Derleniyor', ready: 'Hazır',
     configureFailed: 'CMake yapılandırması şu kodla durdu', buildFailed: 'Derleme şu kodla durdu',
     buildFolderMoved: 'Bu derleme klasörü {folder} için oluşturulmuştu; bu proje için yeniden oluşturuluyor. İlk derleme daha uzun sürer.',
+    configured: 'CMake yapılandırıldı.',
     buildSucceeded: 'Derleme başarıyla tamamlandı.', buildStartFailed: 'Derleme başlatılamadı',
     appRunning: 'Uygulama zaten çalışıyor.', runCancelled: 'Çalıştırma iptal edildi',
     executableMissing: 'Derleme tamamlandı ancak çalıştırılabilir dosya bulunamadı.', launched: 'başlatıldı',
@@ -378,6 +381,7 @@ const createProjectFromTemplate = async (
   activeProjectRoot = target;
   await rememberProject(target).catch((): undefined => undefined);
   void git.projectChanged();
+  void rememberConfiguration(target);
   return { root: target, name: projectName, hasCMakeProject: true };
 };
 
@@ -492,9 +496,26 @@ const replaceMovedBuildDirectory = async (projectRoot: string, buildDirectory: s
   await fs.rm(buildDirectory, { recursive: true, force: true });
 };
 
-// CMake's configure step, which Build and Debug share.
+// Whether the compile commands clangd reads (the Release ones) changed since the studio was last told.
+let compileCommandsChanged = false;
+
+// clangd starts again on new compile commands, and indexes them, so a build tells it once make is done.
+const tellClangd = (): void => {
+  if (compileCommandsChanged) sendToRenderer('clangd:compile-commands', null);
+  compileCommandsChanged = false;
+};
+
+// CMake's configure step, which Build, Debug and configuring on a change share.
 const configure = async (projectRoot: string, buildType: BuildType, toolchain: Toolchain): Promise<number> => {
   const buildDirectory = buildDirectoryFor(projectRoot, buildType);
+  const commands = path.join(buildDirectory, 'compile_commands.json');
+  const before = buildType === 'Release' ? await contentHash(commands) : '';
+  const code = await configureIn(projectRoot, buildDirectory, buildType, toolchain);
+  if (buildType === 'Release' && await contentHash(commands) !== before) compileCommandsChanged = true;
+  return code;
+};
+
+const configureIn = async (projectRoot: string, buildDirectory: string, buildType: BuildType, toolchain: Toolchain): Promise<number> => {
   await replaceMovedBuildDirectory(projectRoot, buildDirectory);
   const args = [
     '-S', projectRoot, '-B', buildDirectory,
@@ -517,6 +538,7 @@ const configureAndBuild = async (buildType: BuildType = 'Release'): Promise<Proc
   sendToRenderer('build:status', { running: true, label: msg('configuring') });
   try {
     const configureCode = await configure(projectRoot, buildType, toolchain);
+    if (buildType === 'Release') await rememberConfiguration(projectRoot);
     if (stopped()) return { success: false, message: msg('stopped') };
     if (configureCode !== 0) {
       return { success: false, message: `${msg('configureFailed')}: ${configureCode}.` };
@@ -533,11 +555,112 @@ const configureAndBuild = async (buildType: BuildType = 'Release'): Promise<Proc
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, message: `${msg('buildStartFailed')}: ${message}` };
   } finally {
+    tellClangd();
     if (!stopped()) {
       building = false;
       sendToRenderer('build:status', { running: false, label: msg('ready') });
     }
   }
+};
+
+// Configuring again when CMake's files change, as CLion reloads a CMake project,
+// so clangd follows new files and settings without a build. The files are the
+// ones CMake read last time (the project's, the engine's, its plugins'); what
+// they held then is kept, so a save that changes nothing, or a file CMake
+// writes itself, does not configure again.
+let autoConfigure = true;
+let configurationWatchers: FSWatcher[] = [];
+let configureTimer: NodeJS.Timeout | null = null;
+let configuredContents = new Map<string, string>();
+
+const contentHash = async (file: string): Promise<string> =>
+  fs.readFile(file).then((data) => createHash('sha1').update(data).digest('hex'), () => '');
+
+const configurationFiles = async (projectRoot: string): Promise<string[]> => {
+  const buildDirectory = buildDirectoryFor(projectRoot);
+  const makefile = await fs.readFile(path.join(buildDirectory, 'CMakeFiles', 'Makefile.cmake'), 'utf8').catch(() => '');
+  const workspace = findAncestorWith(projectRoot, path.join('GlistEngine', 'engine')) ?? path.resolve(projectRoot, '..', '..');
+  const builds = path.join(projectRoot, '_build');
+  const read = cmakeInputs(makefile).map((file) => path.resolve(buildDirectory, file))
+    .filter((file) => !isInside(builds, file) && (isInside(projectRoot, file) || isInside(workspace, file)));
+  if (read.length > 0) return [...new Set(read)];
+  // Before the first configure, or in a build folder made elsewhere: the project's, the engine's and its plugins'.
+  const dependencies = await listDependencies().catch((): GlistDependency[] => []);
+  return [path.join(projectRoot, 'CMakeLists.txt'), ...dependencies.map((dependency) => (dependency.kind === 'engine'
+    ? path.join(dependency.path, 'engine', 'CMakeLists.txt') : path.join(dependency.path, 'CMakeLists.txt')))];
+};
+
+export const stopWatchingConfiguration = (): void => {
+  configurationWatchers.forEach((watcher) => watcher.close());
+  configurationWatchers = [];
+  if (configureTimer) clearTimeout(configureTimer);
+  configureTimer = null;
+};
+
+// Takes what the files hold now as configured, and watches them for the next change.
+const rememberConfiguration = async (projectRoot: string): Promise<void> => {
+  const files = await configurationFiles(projectRoot);
+  const contents = new Map(await Promise.all(files.map(async (file): Promise<[string, string]> => [file, await contentHash(file)])));
+  if (projectRoot !== activeProjectRoot) return;
+  configuredContents = contents;
+  stopWatchingConfiguration();
+  if (!autoConfigure) return;
+  const byFolder = new Map<string, Set<string>>();
+  files.forEach((file) => {
+    const names = byFolder.get(path.dirname(file)) ?? new Set<string>();
+    names.add(path.basename(file));
+    byFolder.set(path.dirname(file), names);
+  });
+  byFolder.forEach((names, folder) => {
+    try {
+      const watcher = watch(folder, { persistent: false }, (_event, name) => { if (name && names.has(name.toString())) scheduleConfigure(); });
+      watcher.on('error', () => undefined);
+      configurationWatchers.push(watcher);
+    } catch { /* A folder that is gone is not watched. */ }
+  });
+};
+
+const configurationChanged = async (): Promise<boolean> => {
+  for (const [file, hash] of configuredContents) if (await contentHash(file) !== hash) return true;
+  return false;
+};
+
+const scheduleConfigure = (): void => {
+  if (configureTimer) clearTimeout(configureTimer);
+  configureTimer = setTimeout(() => { configureTimer = null; void configureOnChange(); }, 1500);
+};
+
+const configureOnChange = async (): Promise<void> => {
+  const projectRoot = activeProjectRoot;
+  if (!autoConfigure || !projectRoot || !existsSync(path.join(projectRoot, 'CMakeLists.txt')) || !(await configurationChanged())) return;
+  // A build configures on its own first; after it, this looks again.
+  if (building) { scheduleConfigure(); return; }
+  building = true;
+  buildGeneration += 1;
+  const generation = buildGeneration;
+  sendToRenderer('build:status', { running: true, label: msg('configuring') });
+  sendToRenderer('build:output', '\n── CONFIGURE ────────────────────────────────────\n');
+  let code = 1;
+  try {
+    code = await configure(projectRoot, 'Release', resolveToolchain(projectRoot));
+    tellClangd();
+  } catch (error) {
+    sendToRenderer('build:output', `${msg('buildStartFailed')}: ${error instanceof Error ? error.message : String(error)}\n`);
+  } finally {
+    if (generation === buildGeneration) {
+      building = false;
+      sendToRenderer('build:status', { running: false, label: msg('ready') });
+    }
+  }
+  if (generation !== buildGeneration || projectRoot !== activeProjectRoot) return;
+  await rememberConfiguration(projectRoot);
+  sendToRenderer('build:configured', { success: code === 0, message: code === 0 ? msg('configured') : `${msg('configureFailed')}: ${code}.` });
+};
+
+const setAutoConfigure = (on: unknown): void => {
+  autoConfigure = on !== false;
+  if (activeProjectRoot) void rememberConfiguration(activeProjectRoot);
+  else stopWatchingConfiguration();
 };
 
 const readAppName = async (projectRoot: string): Promise<string> => {
@@ -679,6 +802,7 @@ export const openProjectAt = async (projectRoot: string): Promise<GlistProjectIn
   activeProjectRoot = root;
   await rememberProject(root).catch((): undefined => undefined);
   void git.projectChanged();
+  void rememberConfiguration(root);
   return {
     root,
     name: path.basename(root),
@@ -1073,6 +1197,7 @@ export const studio: Handlers = {
   runProject,
   stopProject: stopProcesses,
   setLanguage,
+  setAutoConfigure,
   startClangd,
   sendClangd: (message: unknown) => clangd.send(message),
   startDebugging,
