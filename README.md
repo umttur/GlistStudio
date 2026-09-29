@@ -17,6 +17,7 @@ It expects the layout the Glist install scripts create: `C:\dev\glist` on Window
 - Coding agents (Claude Code, Codex, Gemini CLI, Antigravity) in an Agent tab, off until turned on, and installable into the Glist folder
 - Git, off until turned on: a Commit view, changes shown as diffs in the editor area, a Git tab with the log and its graph, branches, remotes and stashes, changed lines and blame in the editor, help with conflicts, and the engine's and plugins' own repositories
 - Automatic CMake source-list updates when files are created, renamed, or removed
+- CMake configures again on its own when a CMake file changes, so code intelligence follows new files and plugins without a build
 - C++ class generation with matching header and source files
 - Project creation from the bundled GlistApp, GlistConsoleApp, and GlistGUIApp templates, into the `myglistapps` folder of the open project's workspace
 - Open Project lists the projects in `myglistapps` and the ones opened before, most recently opened first, with a search box
@@ -29,6 +30,18 @@ It expects the layout the Glist install scripts create: `C:\dev\glist` on Window
 Opening a project starts [clangd](https://clangd.llvm.org/). It is looked up on `PATH`; on Windows the Glist `clang64\bin` folder is searched first. Without clangd the editor still works, with syntax highlighting only.
 
 clangd reads the compile flags from `_build/Release/compile_commands.json`, which the build writes. Until a project has been built once, clangd cannot find the engine headers; it restarts on its own after that first build. Definitions in GlistEngine and the plugins the project uses open for editing, as their files do from the explorer: neither builds on its own, so work on them happens from an app. The first change to one in a session says that every project shares it. Other files in the Glist folder, such as zbin's, open read-only, and a rename or fix that clangd offers only ever changes the project's own files.
+
+## Configuring
+
+When CMakeLists.txt or another CMake file the project uses changes, whether the project's, the engine's or a plugin's, CMake configures the project again a moment later, the way CLion reloads a CMake project.
+
+- The files watched are the ones CMake itself read the last time it configured.
+- Changes that come quickly after each other are configured once, and a save that changes nothing configures nothing.
+- When the compile commands change, clangd restarts to read them; during a build, once the build is done. Adding a plugin to `PLUGINS` makes its headers known without a build.
+- Configuring shows in Output. A failure says so in a message with the way to Output.
+- It can be turned off in Settings, under Build.
+
+A build folder remembers the project folder it was made for, and CMake will not use it for another. A project that was moved or copied since its last build gets a new build folder, so its first build takes longer.
 
 ## Debugging
 
