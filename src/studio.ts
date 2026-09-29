@@ -78,6 +78,7 @@ const messages = {
     newTitle: 'Create Glist project',
     buildRunning: 'A build is already running.', configuring: 'Configuring', building: 'Building', ready: 'Ready',
     configureFailed: 'CMake configuration stopped with code', buildFailed: 'Build stopped with code',
+    buildFolderMoved: 'This build folder was made for {folder}, so it is made again for this project. The first build takes longer.',
     buildSucceeded: 'Build completed successfully.', buildStartFailed: 'Could not start build',
     appRunning: 'The application is already running.', runCancelled: 'Run cancelled',
     executableMissing: 'Build completed, but no executable was found.', launched: 'launched',
@@ -113,6 +114,7 @@ const messages = {
     newTitle: 'Glist projesi oluştur',
     buildRunning: 'Bir derleme zaten çalışıyor.', configuring: 'Yapılandırılıyor', building: 'Derleniyor', ready: 'Hazır',
     configureFailed: 'CMake yapılandırması şu kodla durdu', buildFailed: 'Derleme şu kodla durdu',
+    buildFolderMoved: 'Bu derleme klasörü {folder} için oluşturulmuştu; bu proje için yeniden oluşturuluyor. İlk derleme daha uzun sürer.',
     buildSucceeded: 'Derleme başarıyla tamamlandı.', buildStartFailed: 'Derleme başlatılamadı',
     appRunning: 'Uygulama zaten çalışıyor.', runCancelled: 'Çalıştırma iptal edildi',
     executableMissing: 'Derleme tamamlandı ancak çalıştırılabilir dosya bulunamadı.', launched: 'başlatıldı',
@@ -471,6 +473,37 @@ const runBuildCommand = (
 let building = false;
 let buildGeneration = 0;
 
+const sameFolder = async (left: string, right: string): Promise<boolean> => {
+  const real = async (folder: string): Promise<string> => fs.realpath(folder).catch(() => path.resolve(folder));
+  const [first, second] = await Promise.all([real(left), real(right)]);
+  return process.platform === 'win32' ? first.toLowerCase() === second.toLowerCase() : first === second;
+};
+
+// A build folder remembers the source folder it was made for, and CMake will
+// not use it for another, so a project moved or copied since gets a new one.
+// Only the project's own build folder, and only when it really is inside it.
+const replaceMovedBuildDirectory = async (projectRoot: string, buildDirectory: string): Promise<void> => {
+  const cache = await fs.readFile(path.join(buildDirectory, 'CMakeCache.txt'), 'utf8').catch(() => '');
+  const madeFor = /^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$/m.exec(cache)?.[1]?.trim();
+  if (!madeFor || await sameFolder(madeFor, projectRoot)) return;
+  const [realRoot, realBuild] = await Promise.all([fs.realpath(projectRoot), fs.realpath(buildDirectory)]);
+  if (realBuild === realRoot || !isInside(realRoot, realBuild)) return;
+  sendToRenderer('build:output', `\n${msg('buildFolderMoved').replace('{folder}', madeFor)}\n`);
+  await fs.rm(buildDirectory, { recursive: true, force: true });
+};
+
+// CMake's configure step, which Build and Debug share.
+const configure = async (projectRoot: string, buildType: BuildType, toolchain: Toolchain): Promise<number> => {
+  const buildDirectory = buildDirectoryFor(projectRoot, buildType);
+  await replaceMovedBuildDirectory(projectRoot, buildDirectory);
+  const args = [
+    '-S', projectRoot, '-B', buildDirectory,
+    `-DCMAKE_BUILD_TYPE=${buildType}`, '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+  ];
+  if (!existsSync(path.join(buildDirectory, 'CMakeCache.txt')) && toolchain.generator) args.push('-G', toolchain.generator);
+  return runBuildCommand(toolchain.cmake, args, projectRoot, toolchain);
+};
+
 const configureAndBuild = async (buildType: BuildType = 'Release'): Promise<ProcessResult> => {
   if (building) return { success: false, message: msg('buildRunning') };
   building = true;
@@ -480,19 +513,10 @@ const configureAndBuild = async (buildType: BuildType = 'Release'): Promise<Proc
   const projectRoot = requireProjectRoot();
   const toolchain = resolveToolchain(projectRoot);
   const buildDirectory = buildDirectoryFor(projectRoot, buildType);
-  const configureArgs = [
-    '-S', projectRoot, '-B', buildDirectory,
-    `-DCMAKE_BUILD_TYPE=${buildType}`, '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
-  ];
-  if (!existsSync(path.join(buildDirectory, 'CMakeCache.txt')) && toolchain.generator) {
-    configureArgs.push('-G', toolchain.generator);
-  }
 
   sendToRenderer('build:status', { running: true, label: msg('configuring') });
   try {
-    const configureCode = await runBuildCommand(
-      toolchain.cmake, configureArgs, projectRoot, toolchain,
-    );
+    const configureCode = await configure(projectRoot, buildType, toolchain);
     if (stopped()) return { success: false, message: msg('stopped') };
     if (configureCode !== 0) {
       return { success: false, message: `${msg('configureFailed')}: ${configureCode}.` };
