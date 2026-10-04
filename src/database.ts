@@ -16,6 +16,9 @@ import { quoteName } from './database-sql';
 
 const pageRows = 100;
 const queryRows = 1000;
+// Rows are counted only this far, so a table of millions opens as fast as a
+// small one; more is said as "100,000+".
+export const countedRows = 100000;
 // The rowid, under a name no column has, beside a table's own columns.
 const keyColumn = 'glist·rowid';
 
@@ -59,6 +62,13 @@ export const writes = (database: DatabaseSync, sql: string): boolean => {
   } catch {
     return true;
   }
+};
+
+// The rows of a table, or of a filtered one (from is what follows FROM),
+// counted up to a limit: SQLite stops looking there.
+const countRows = (database: DatabaseSync, from: string, limit: number): { count: number; more: boolean } => {
+  const count = Number(database.prepare(`SELECT count(*) AS n FROM (SELECT 1 FROM ${from} LIMIT ${limit + 1})`).get()?.n ?? 0);
+  return count > limit ? { count: limit, more: true } : { count, more: false };
 };
 
 // Changes made and not committed yet: how many, while a transaction is open.
@@ -144,16 +154,17 @@ export class Databases {
       database.prepare(sql).all(...values) as Array<Record<string, unknown>>;
     const name = String(row.name);
     const kind = row.type === 'view' ? 'view' : 'table';
-    let rows: number | null = null;
+    let rows: { count: number; more: boolean } | null = null;
     if (counted && kind === 'table') {
-      try { rows = Number(database.prepare(`SELECT count(*) AS n FROM ${quoteName(name)}`).get()?.n); } catch { rows = null; }
+      try { rows = countRows(database, quoteName(name), countedRows); } catch { rows = null; }
     }
     return {
       name,
       kind,
       withoutRowid: Number(row.wr) === 1,
       sql: String(row.sql ?? ''),
-      rows,
+      rows: rows?.count ?? null,
+      moreRows: rows?.more ?? false,
       columns: all('SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_xinfo(?) WHERE hidden IN (0, 2, 3)', name).map((column) => ({
         name: String(column.name),
         type: String(column.type ?? ''),
@@ -214,7 +225,8 @@ export class Databases {
     statement.setReturnArrays(true);
     statement.setReadBigInts(true);
     const found = (statement.all() as unknown as unknown[][]).map((row) => row.map(cellOf));
-    const total = Number(database.prepare(`SELECT count(*) AS n FROM ${quoteName(table)}${where}`).get()?.n ?? 0);
+    // Counted as far past the page as a table is when listed, so Next goes on past that.
+    const { count: total, more: moreRows } = countRows(database, `${quoteName(table)}${where}`, offset + countedRows);
     const primary = schema.columns.filter((column) => column.primaryKey > 0).sort((a, b) => a.primaryKey - b.primaryKey).map((column) => column.name);
     return {
       columns,
@@ -222,6 +234,7 @@ export class Databases {
       keys: !keyed ? null : byRowid ? found.map((row) => [row[0]]) : found.map((row) => primary.map((name) => row[columns.indexOf(name)])),
       keyColumns: !keyed ? [] : byRowid ? ['rowid'] : primary,
       total,
+      moreRows,
       offset,
       pageSize: pageRows,
     };

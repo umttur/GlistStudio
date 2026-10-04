@@ -209,7 +209,9 @@ interface GlistDatabaseTable {
   kind: 'table' | 'view';
   withoutRowid: boolean;
   sql: string;
+  // Counted only so far: more when there are more than that (database.ts).
   rows: number | null;
+  moreRows: boolean;
   columns: GlistDatabaseColumn[];
   indexes: Array<{ name: string; unique: boolean; automatic: boolean; columns: string[] }>;
   foreignKeys: Array<{ from: string; table: string; to: string }>;
@@ -231,7 +233,9 @@ interface GlistDatabaseRows {
   // What tells each row apart for changing it; null for a view.
   keys: GlistDatabaseCell[][] | null;
   keyColumns: string[];
+  // As a table's rows are counted: at least total when more.
   total: number;
+  moreRows: boolean;
   offset: number;
   pageSize: number;
 }
@@ -792,6 +796,9 @@ interface Window {
     databaseCommit(filePath: string): Promise<GlistDatabasePending>;
     databaseDiscard(filePath: string): Promise<GlistDatabasePending>;
     databaseClose(filePath: string): Promise<void>;
+    // Ends a long query or comparison, and with it every database open in the
+    // window, losing the changes waiting in them; false when nothing was running.
+    databaseStop(): Promise<boolean>;
     // A database compared between two commits, or a commit and the file on
     // disk (target null); no base when the file is new. From: where a renamed
     // file was at the base.
@@ -946,6 +953,9 @@ interface Window {
     // The window's backend stopped by itself and a new one started, with no project open yet;
     // with the error that stopped it, when it said.
     onBackendRestarted(callback: (error: GlistAppError | null) => void): () => void;
+    // The databases open in the window were closed, and the changes waiting in
+    // them lost: stopped by databaseStop, or their process ended by itself.
+    onDatabasesLost(callback: (lost: { stopped: boolean }) => void): () => void;
     // An error nothing caught in the main process, or in the backend without stopping it.
     onAppError(callback: (error: GlistAppError) => void): () => void;
     onDebugMessage(callback: (message: unknown) => void): () => void;

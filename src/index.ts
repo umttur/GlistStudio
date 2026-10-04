@@ -2,7 +2,8 @@ import { cpSync, existsSync, mkdirSync, promises as fs, readFileSync, writeFileS
 import { homedir, release } from 'node:os';
 import path from 'node:path';
 import {
-  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell, utilityProcess, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
+  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
+  type UtilityProcess,
 } from 'electron';
 import { eventChannels, invokeChannels, type InvokeMethod } from './api';
 import { appError, backendStartArgument, type BackendStart, type FromBackend, type ToBackend } from './backend-protocol';
@@ -229,6 +230,28 @@ const startBackend = (window: BrowserWindow): Backend => {
   let stopping = false;
   let crash: GlistAppError | null = null;
   const exited = new Promise<void>((resolve) => { child.once('exit', () => resolve()); });
+  // Its SQLite work, in a process of its own that can be ended in the middle of
+  // a statement (database-client.ts): started and ended as it asks, and given
+  // a port to it. Each is told apart by the id the backend gave it.
+  let database: { id: number; process: UtilityProcess } | null = null;
+  const startDatabase = (id: number): void => {
+    database?.process.kill();
+    const started = utilityProcess.fork(path.join(__dirname, 'database-process.js'), [], { serviceName: 'Glist Studio databases', stdio: 'inherit' });
+    database = { id, process: started };
+    let spawned = false;
+    started.once('spawn', () => {
+      spawned = true;
+      // The backend went meanwhile.
+      if (child.pid === undefined) { started.kill(); return; }
+      const { port1, port2 } = new MessageChannelMain();
+      started.postMessage(null, [port2]);
+      child.postMessage({ kind: 'database', id } satisfies ToBackend, [port1]);
+    });
+    started.once('exit', () => {
+      if (database?.process === started) database = null;
+      if (!spawned && child.pid !== undefined) post({ kind: 'database', id });
+    });
+  };
   child.on('message', (message: FromBackend) => {
     if (message.kind === 'reply') {
       const waiting = pending.get(message.reply.id);
@@ -242,6 +265,9 @@ const startBackend = (window: BrowserWindow): Backend => {
       if (message.op === 'showItemInFolder') { shell.showItemInFolder(message.path); done(); }
       else if (message.op === 'trash') shell.trashItem(message.path).then(() => done(), done);
       else shell.openPath(message.path).then((problem) => done(problem || undefined), done);
+    } else if (message.kind === 'database') {
+      if (message.op === 'start') startDatabase(message.id);
+      else if (database?.id === message.id) database.process.kill();
     } else if (message.kind === 'crash') crash = message.error;
   });
   // A backend that stops by itself is started again for the window, given its
@@ -250,6 +276,10 @@ const startBackend = (window: BrowserWindow): Backend => {
   child.once('exit', (code) => {
     pending.forEach((waiting) => waiting.reject(new Error(`Glist Studio's backend stopped (${code}).`)));
     pending.clear();
+    // Its database process ends by itself once the backend has gone, closing
+    // its databases; one busy with a statement is ended a moment later.
+    const left = database?.process;
+    if (left) setTimeout(() => left.kill(), 3000);
     if (stopping || window.isDestroyed()) return;
     const next = startBackend(window);
     const memory = memories.get(contents.id);

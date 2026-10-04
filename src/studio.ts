@@ -23,7 +23,7 @@ import { hiddenFolderList, isHiddenFolder, setHiddenFolders } from './hidden-fol
 import { imageType } from './images';
 import { mediaType, type MediaSource } from './media';
 import { readAudioFacts } from './media-serve';
-import { Databases } from './database';
+import { WindowDatabases, type DatabaseChannel } from './database-client';
 import { diffDatabase, fileStamp } from './database-diff';
 import { gatherModel, modelBytes } from './model-files';
 import { modelType } from './models';
@@ -46,6 +46,9 @@ export interface StudioHost {
   version: string;
   // The commit Glist Studio was built from, for Settings > About.
   studioHead(): Promise<RepositoryHead | null>;
+  // A process for SQLite's work, which can be ended in the middle of a
+  // statement (database-client.ts).
+  startDatabase(): Promise<DatabaseChannel>;
 }
 
 export { defaultProjectsDirectory, glistRoot, studioHome } from './studio-places';
@@ -1117,10 +1120,12 @@ const readModel = async (filePath: string): Promise<GlistModelFile> => {
   return { format, ...(await gatherModel(safePath, readable)) };
 };
 
-// SQLite databases for their tabs (database.ts): the project's own may be
-// changed, one elsewhere in the Glist workspace only read. A file that is not
-// SQLite is said to be so, rather than opened as a new, empty database.
-const databases = new Databases(async (filePath) => {
+// SQLite databases for their tabs (database.ts), in a process of their own
+// (database-client.ts): the project's own may be changed, one elsewhere in the
+// Glist workspace only read, as decided here. A file that is not SQLite is said
+// to be so, rather than opened as a new, empty database. When the process
+// ends, the window hears that what waited in them is gone.
+const databases = new WindowDatabases(async (filePath) => {
   const editable = await assertEditablePath(filePath).catch((): null => null);
   const file = editable ?? await workspacePath(filePath);
   const handle = await fs.open(file, 'r');
@@ -1131,8 +1136,14 @@ const databases = new Databases(async (filePath) => {
     await handle.close();
   }
   return { file, readOnly: !editable };
-}, () => msg('databaseUnavailable'));
-export const closeDatabases = (): void => databases.closeAll();
+}, {
+  start: () => host.startDatabase(),
+  lost: (stopped) => sendToRenderer('database:lost', { stopped }),
+  unavailable: () => msg('databaseUnavailable'),
+  stoppedMessage: () => msg('databaseStopped'),
+  endedMessage: () => msg('databaseEnded'),
+});
+export const closeDatabases = (): void => databases.shutdown();
 // A database on disk for its diff, if the studio may read it as the database
 // tab would; null when there is none.
 const workingDatabase = async (file: string): Promise<string | null> => (await fs.stat(file).then(() => true, () => false)
@@ -1690,12 +1701,16 @@ export const studio: Handlers = {
   databaseCommit: (filePath: unknown) => databases.finish(String(filePath), true),
   databaseDiscard: (filePath: unknown) => databases.finish(String(filePath), false),
   databaseClose: (filePath: unknown) => databases.close(String(filePath)),
+  // A long query or comparison ended, with every database open.
+  databaseStop: () => databases.stop(),
   // A database's diff: a commit's version from git, the one on disk read where
-  // it is, if the studio may read it, as the database tab would.
+  // it is, if the studio may read it, as the database tab would; compared in
+  // the databases' process.
   databaseDiff: (filePath: unknown, base: unknown, target: unknown, from: unknown) => diffDatabase({
     blob: (revision, file) => git.blobAt(revision, file),
     working: workingDatabase,
     unavailable: () => msg('databaseUnavailable'),
+    compare: (before, after, options) => databases.compare(before, after, options),
   }, String(filePath), typeof base === 'string' ? base : null, typeof target === 'string' ? target : null, typeof from === 'string' ? from : undefined),
   // Whether the file on disk changed since its diff read it, without reading it again.
   databaseStamp: async (filePath: unknown) => {

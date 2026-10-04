@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { eventChannels, type Handlers } from '../api';
 import { appError } from '../backend-protocol';
+import { forkedDatabase } from '../database-client';
 import { mediaIdOf, type MediaSource } from '../media';
 import { mediaFile, MediaGrants } from '../media-serve';
 import { readRepositoryHead } from '../repository-head';
@@ -69,6 +70,9 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
     version: (JSON.parse(readFileSync(path.join(options.sourceRoot, 'package.json'), 'utf8')) as { version: string }).version,
     // Read each time: the checkout can move while the server runs.
     studioHead: () => readRepositoryHead(options.sourceRoot),
+    // SQLite's work, in a process of its own (database-client.ts), run from
+    // its TypeScript source as this server is.
+    startDatabase: async () => forkedDatabase(path.join(__dirname, 'database-process.cjs')),
   });
 
   const handlers: Handlers = { ...backendHandlers, setTheme: () => undefined };

@@ -1,9 +1,11 @@
 /* global BigInt */
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Databases, cellOf, statementStart, writes } from '../src/database.ts';
+import { fileURLToPath } from 'node:url';
+import { Databases, cellOf, countedRows, statementStart, writes } from '../src/database.ts';
+import { WindowDatabases, forkedDatabase } from '../src/database-client.ts';
 import { createTableSql, quoteName } from '../src/database-sql.ts';
 import { isDatabaseSideFile } from '../src/databases.ts';
 import { isHiddenFolder } from '../src/hidden-folders.ts';
@@ -206,6 +208,154 @@ try {
   other?.close();
   databases.closeAll();
   rmSync(root, { recursive: true, force: true });
+}
+
+// A big table's rows are counted only so far, so that it opens fast: past
+// that, "more". A page's total is counted as far past the page, so Next goes
+// on; a filter counts what it lets through.
+{
+  const bigRoot = mkdtempSync(path.join(tmpdir(), 'glist-database-big-'));
+  const big = path.join(bigRoot, 'big.db');
+  const maker = new DatabaseSync(big);
+  maker.exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, kind TEXT); CREATE TABLE few (a);
+    WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < ${countedRows + 5}) INSERT INTO events (kind) SELECT 'k' || (x % 3) FROM c;
+    INSERT INTO few VALUES (1), (2)`);
+  maker.close();
+  const counting = new Databases(async (filePath) => ({ file: filePath, readOnly: true }), () => 'unavailable');
+  try {
+    const tables = (await counting.schema(big)).tables;
+    assert.deepEqual(tables.map((table) => [table.name, table.rows, table.moreRows]), [['events', countedRows, true], ['few', 2, false]]);
+    const first = await counting.rows(big, 'events', {});
+    assert.deepEqual([first.total, first.moreRows, first.rows.length], [countedRows, true, 100]);
+    const last = await counting.rows(big, 'events', { offset: countedRows });
+    assert.deepEqual([last.total, last.moreRows, last.rows.length], [countedRows + 5, false, 5]);
+    const filtered = await counting.rows(big, 'events', { where: 'id <= 250' });
+    assert.deepEqual([filtered.total, filtered.moreRows], [250, false]);
+  } finally {
+    counting.closeAll();
+    rmSync(bigRoot, { recursive: true, force: true });
+  }
+}
+
+// The databases' own process, as the backend uses it (database-client.ts),
+// forked from the browser build's script: calls answered, errors with their
+// messages, values as the window gets them, changes waiting between calls;
+// the process ended by itself in the middle of a call, or stopped, losing
+// what waited and saying so, and a new one for the next call; let go of when
+// idle, it closes its databases itself.
+{
+  const clientRoot = mkdtempSync(path.join(tmpdir(), 'glist-database-client-'));
+  const game = path.join(clientRoot, 'game.db');
+  const text = path.join(clientRoot, 'notes.db');
+  writeFileSync(text, 'just some text');
+  const script = fileURLToPath(new URL('../src/web/database-process.cjs', import.meta.url));
+  const processes = [];
+  const lost = [];
+  const located = [];
+  const windowDatabases = new WindowDatabases(async (filePath) => {
+    located.push(filePath);
+    if (filePath === text) throw new Error('not a database');
+    return { file: filePath, readOnly: false };
+  }, {
+    start: async () => {
+      const channel = forkedDatabase(script);
+      const started = { channel, gone: false };
+      processes.push(started);
+      return { ...channel, listen: (reply, gone) => channel.listen(reply, () => { started.gone = true; gone(); }) };
+    },
+    lost: (stopped) => lost.push(stopped),
+    unavailable: () => 'unavailable here',
+    stoppedMessage: () => 'stopped here',
+    endedMessage: () => 'ended here',
+  });
+  const until = async (ready, what) => {
+    for (const started = Date.now(); !ready(); await new Promise((resolve) => { setTimeout(resolve, 20); })) {
+      if (Date.now() - started > 10000) throw new Error(`timed out waiting for ${what}`);
+    }
+  };
+  const inGame = (sql) => {
+    const reader = new DatabaseSync(game, { readOnly: true });
+    try { return reader.prepare(sql).all(); } finally { reader.close(); }
+  };
+  const endless = 'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c';
+  try {
+    // Nothing is started for what has nothing open, nor for a file the backend refuses.
+    assert.deepEqual(await windowDatabases.finish(game, true), { open: false, changes: 0 });
+    await windowDatabases.close(game);
+    await assert.rejects(windowDatabases.schema(text), { message: 'not a database' });
+    assert.equal(processes.length, 0);
+
+    // Answered there, values as the window gets them.
+    const made = await windowDatabases.query(game, `PRAGMA journal_mode = WAL; CREATE TABLE players (id INTEGER PRIMARY KEY, name TEXT, big INTEGER, avatar BLOB);
+      INSERT INTO players (name, big, avatar) VALUES ('ada', 9007199254740993, x'00ff00'); SELECT name, big, avatar FROM players`);
+    assert.ok(made.every((result) => !('error' in result)), JSON.stringify(made));
+    assert.deepEqual(made.at(-1).rows, [['ada', '9007199254740993', { blob: 3 }]]);
+    assert.equal(processes.length, 1);
+    await windowDatabases.finish(game, true);
+
+    // An error crosses with its message, as one in the backend had it.
+    await assert.rejects(windowDatabases.rows(game, 'nope', {}), { message: 'no such table: nope' });
+    assert.match((await windowDatabases.query(game, 'SELECT nope FROM players'))[0].error, /no such column: nope/);
+
+    // A change waits between calls, in the process, until committed.
+    const edited = await windowDatabases.edit(game, { kind: 'update', table: 'players', key: [1], column: 'name', value: 'grace' });
+    assert.deepEqual(edited.pending, { open: true, changes: 1 });
+    assert.deepEqual((await windowDatabases.schema(game)).pending, { open: true, changes: 1 });
+    assert.equal((await windowDatabases.rows(game, 'players', {})).rows[0][1], 'grace');
+    assert.equal(inGame('SELECT name FROM players')[0].name, 'ada');
+    assert.deepEqual(await windowDatabases.finish(game, true), { open: false, changes: 0 });
+    assert.equal(inGame('SELECT name FROM players')[0].name, 'grace');
+    // Each call that opens finds the file again, here.
+    assert.ok(located.filter((filePath) => filePath === game).length >= 4);
+
+    // Ended by itself in the middle of a call: the call fails, the change
+    // waiting is lost and the window told, and the next call has a new one.
+    await windowDatabases.edit(game, { kind: 'update', table: 'players', key: [1], column: 'name', value: 'lost' });
+    const cut = windowDatabases.query(game, endless);
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+    processes[0].channel.kill();
+    await assert.rejects(cut, { message: 'ended here' });
+    assert.deepEqual(lost, [false]);
+    assert.deepEqual((await windowDatabases.schema(game)).pending, { open: false, changes: 0 });
+    assert.equal(processes.length, 2);
+    assert.equal(inGame('SELECT name FROM players')[0].name, 'grace');
+
+    // Stop does nothing while nothing runs; while something does, the
+    // process itself is ended, in the middle of a statement, and so is what
+    // waited; the next call has a new one.
+    assert.equal(windowDatabases.stop(), false);
+    assert.equal(processes[1].gone, false);
+    await windowDatabases.edit(game, { kind: 'update', table: 'players', key: [1], column: 'name', value: 'stopped' });
+    const long = windowDatabases.query(game, endless);
+    const comparing = windowDatabases.compare(game, game, {});
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+    assert.equal(windowDatabases.stop(), true);
+    await assert.rejects(long, { message: 'stopped here' });
+    await assert.rejects(comparing, { message: 'stopped here' });
+    assert.deepEqual(lost, [false, true]);
+    await until(() => processes[1].gone, 'the stopped process to end');
+    assert.equal(inGame('SELECT name FROM players')[0].name, 'grace');
+    assert.deepEqual((await windowDatabases.schema(game)).pending, { open: false, changes: 0 });
+    assert.equal(processes.length, 3);
+
+    // Comparisons run there too.
+    const diff = await windowDatabases.compare(null, game, {});
+    assert.deepEqual(diff.tables.map((table) => [table.name, table.state, table.rows.added]), [['players', 'added', 1]]);
+
+    // Let go of while idle, it closes its databases and ends by itself: the
+    // WAL database's changes are written back to the file.
+    await windowDatabases.query(game, "UPDATE players SET name = 'kept'");
+    await windowDatabases.finish(game, true);
+    assert.ok(statSync(`${game}-wal`).size > 0);
+    windowDatabases.shutdown();
+    await until(() => processes[2].gone, 'the released process to end');
+    assert.equal(existsSync(`${game}-wal`), false);
+    assert.equal(inGame('SELECT name FROM players')[0].name, 'kept');
+    assert.deepEqual(lost, [false, true]);
+  } finally {
+    windowDatabases.shutdown();
+    rmSync(clientRoot, { recursive: true, force: true });
+  }
 }
 
 // SQLite's journal and write-ahead files beside a database, left out of the explorer and commits.

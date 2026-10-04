@@ -1,4 +1,4 @@
-import { button, cellView, colored, counted, make, numbers, words } from './database-page';
+import { button, cellView, colored, counted, make, numbers, stopAfter, words } from './database-page';
 import { icon, type IconName } from './icons';
 import { lineChanges } from './line-diff';
 import { t, type TranslationKey } from './localization';
@@ -33,6 +33,8 @@ export interface DatabaseDiffPage {
   // a diff against the file on disk, with changes git knows of.
   canRollback(): boolean;
   rollback(): void;
+  // Ends a comparison that runs long, asking first: every database open goes with it.
+  stop(): void;
   // The table or view shown, whether unchanged ones are listed, and where the
   // shown one's rows and the list were scrolled to, kept while the tab is open.
   chosen?: string;
@@ -74,7 +76,7 @@ export const renderDatabaseDiffPage = (target: HTMLElement, page: DatabaseDiffPa
   const next = action('arrow-down', t('databaseDiffNext'), () => step(1));
   const refresh = action('refresh', t('databaseRefresh'), () => {
     refresh.disabled = true;
-    status(t('databaseDiffComparing'));
+    comparing();
     void page.refresh();
   });
   const open = action('go-to-file', t('databaseDiffOpen'), () => page.open());
@@ -88,9 +90,11 @@ export const renderDatabaseDiffPage = (target: HTMLElement, page: DatabaseDiffPa
   // Shown again, or drawn anew, it looks whether what it compared changed.
   const shown = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) page.check(); });
   shown.observe(view);
+  let slow: number | undefined;
   const dispose = (): void => {
     disposed = true;
     shown.disconnect();
+    window.clearTimeout(slow);
   };
   // The file as saved is what is compared; what waits in its tab is not in it.
   if (page.waiting()) {
@@ -99,15 +103,26 @@ export const renderDatabaseDiffPage = (target: HTMLElement, page: DatabaseDiffPa
     view.append(waiting);
   }
   target.replaceChildren(view);
-  const status = (text: string, error = false): void => {
+  const status = (text: string, error = false): HTMLElement => {
     view.querySelector('.database-diff-status')?.remove();
     const line = make('p', `readme-status database-diff-status${error ? ' error' : ''}`, text);
     header.after(line);
+    return line;
+  };
+  // Comparing, with Stop once it takes long; the page is drawn anew when done.
+  const comparing = (): void => {
+    const line = status(t('databaseDiffComparing'));
+    window.clearTimeout(slow);
+    slow = window.setTimeout(() => {
+      const stop = button(t('databaseStop'), 'database-button danger');
+      stop.addEventListener('click', () => page.stop());
+      line.append(stop);
+    }, stopAfter);
   };
   const { diff } = page;
   if (page.error) status(`${t('databaseDiffFailed')}: ${page.error}`, true);
   if (!diff) {
-    if (!page.error) status(t('databaseDiffComparing'));
+    if (!page.error) comparing();
     return { dispose };
   }
 

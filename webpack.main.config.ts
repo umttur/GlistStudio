@@ -11,8 +11,10 @@ const commit = ((): string => {
 
 export const mainConfig: Configuration = {
   // index.js runs in the main process; backend.js in a utility process for
-  // each window (src/backend.ts), which index.js starts from beside it.
-  entry: { index: './src/index.ts', backend: './src/backend.ts' },
+  // each window (src/backend.ts), which index.js starts from beside it, and
+  // database-process.js in another, for the backend's SQLite work
+  // (src/database-client.ts).
+  entry: { index: './src/index.ts', backend: './src/backend.ts', 'database-process': './src/database-process.ts' },
   output: { filename: '[name].js' },
   // Put your normal webpack config below here
   module: {

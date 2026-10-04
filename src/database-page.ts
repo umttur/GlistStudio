@@ -21,6 +21,8 @@ export interface DatabasePage {
   error?: string;
   // What waits to be committed, as last heard: closing the tab asks about it.
   pending?: GlistDatabasePending;
+  // Ends a query that runs long, asking first: every database open goes with it.
+  stop(): void;
 }
 
 type Shown = { kind: 'table'; name: string; view: 'data' | 'structure' } | { kind: 'sql' } | { kind: 'new' };
@@ -59,6 +61,10 @@ export const words = (key: Words, values: Record<string, string | number>): stri
 // "1 row", "3 rows", as the language counts.
 export const counted = (one: Words, many: Words, values: Record<string, string | number> & { count: number }): string =>
   words(new Intl.PluralRules(getLanguage()).select(values.count) === 'one' ? one : many, values);
+// Rows as counted (database.ts), only so far: "100,000+" past that.
+const rowCount = (count: number, more: boolean): string => (more ? words('databaseCountMore', { count }) : numbers().format(count));
+// Offered while something has run this long.
+export const stopAfter = 3000;
 const isBlob = (value: GlistDatabaseCell): value is { blob: number } => value !== null && typeof value === 'object';
 const plain = (value: GlistDatabaseCell): string => (value === null ? '' : isBlob(value) ? `BLOB ${value.blob}` : String(value));
 const csvField = (value: GlistDatabaseCell): string => {
@@ -128,7 +134,7 @@ export const renderDatabasePage = (target: HTMLElement, page: DatabasePage): { d
       make('div', 'database-list-heading', title),
       ...entries.map((table) => {
         const item = button('', 'database-item');
-        item.append(make('span', 'database-item-name', table.name), make('span', 'database-item-count', table.rows === null ? '' : numbers().format(table.rows)));
+        item.append(make('span', 'database-item-name', table.name), make('span', 'database-item-count', table.rows === null ? '' : rowCount(table.rows, table.moreRows)));
         item.classList.toggle('active', shown.kind === 'table' && shown.name === table.name);
         item.title = table.name;
         item.addEventListener('click', () => show({ kind: 'table', name: table.name, view: shown.kind === 'table' ? shown.view : 'data' }));
@@ -382,11 +388,11 @@ export const renderDatabasePage = (target: HTMLElement, page: DatabasePage): { d
     filter.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { rowsState.where = filter.value; rowsState.offset = 0; rowsState.selected.clear(); void show(shown); }
     });
-    const range = data.total ? words('databaseRange', { from: data.offset + 1, to: data.offset + data.rows.length, total: data.total }) : '';
+    const range = data.total ? words('databaseRange', { from: data.offset + 1, to: data.offset + data.rows.length, total: rowCount(data.total, data.moreRows) }) : '';
     const previous = button(t('databasePrevious'));
     const next = button(t('databaseNext'));
     previous.disabled = data.offset === 0;
-    next.disabled = data.offset + data.rows.length >= data.total;
+    next.disabled = !data.moreRows && data.offset + data.rows.length >= data.total;
     previous.addEventListener('click', () => { rowsState.offset = Math.max(0, data.offset - data.pageSize); rowsState.selected.clear(); void show(shown); });
     next.addEventListener('click', () => { rowsState.offset = data.offset + data.pageSize; rowsState.selected.clear(); void show(shown); });
     pager.append(make('span', 'database-range', range), previous, next);
@@ -452,7 +458,15 @@ export const renderDatabasePage = (target: HTMLElement, page: DatabasePage): { d
   const renderSql = (): void => {
     const toolbar = make('div', 'database-toolbar');
     const run = button(t('databaseRun'), 'database-button primary');
-    toolbar.append(run, make('span', 'database-hint', t('databaseRunHint')));
+    const hint = make('span', 'database-hint', t('databaseRunHint'));
+    // Offered once a run takes long; apart from Run, so that a second click
+    // on Run cannot land on it.
+    const running = make('span', 'database-running');
+    const stop = button(t('databaseStop'), 'database-button danger');
+    running.append(make('span', 'database-hint', t('databaseStillRunning')), stop);
+    running.hidden = true;
+    stop.addEventListener('click', () => page.stop());
+    toolbar.append(run, hint, running);
     const editorHost = make('div', 'database-sql-editor');
     const results = make('div', 'database-results');
     main.append(toolbar, editorHost, results);
@@ -475,9 +489,16 @@ export const renderDatabasePage = (target: HTMLElement, page: DatabasePage): { d
       if (!chosen?.trim()) return;
       consoles.set(page.path, editor.getValue());
       run.disabled = true;
+      const slow = window.setTimeout(() => {
+        hint.hidden = true;
+        running.hidden = false;
+      }, stopAfter);
       let outcome: GlistDatabaseResult[];
       try { outcome = await api.databaseQuery(page.path, chosen); } catch (error) { outcome = [{ sql: chosen, error: message(error) }]; }
+      window.clearTimeout(slow);
       run.disabled = false;
+      hint.hidden = false;
+      running.hidden = true;
       if (disposed) return;
       results.replaceChildren(...outcome.map((result) => {
         const block = make('div', 'database-result');

@@ -345,6 +345,8 @@ export interface DatabaseVersions {
   // The file on disk, once known to be one the studio may read; null when there is none.
   working(filePath: string): Promise<string | null>;
   unavailable(): string;
+  // Compares them; here, unless given (the backend's is in another process).
+  compare?: typeof compareDatabases;
 }
 
 // A database between two commits, or a commit and the file on disk (target
@@ -370,7 +372,7 @@ export const diffDatabase = async (
     };
     const before = base === null ? null : await copy(base, from ?? filePath, 'base.db');
     const after = target === null ? await versions.working(filePath) : await copy(target, filePath, 'target.db');
-    return await compareDatabases(before, after, { scratch, unavailable: versions.unavailable });
+    return await (versions.compare ?? compareDatabases)(before, after, { scratch, unavailable: versions.unavailable });
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
   }

@@ -1866,6 +1866,7 @@ const openDatabaseDiff = (key: string, request: DiffRequest): void => {
         }
         void refresh();
       },
+      stop: stopDatabases,
     },
   };
   // Transient, as every diff is.
@@ -1898,7 +1899,9 @@ const openDatabase = (filePath: string): void => openPageTab<DatabaseTab>(
     kind: 'database',
     path: filePath,
     name: baseName(filePath),
-    page: { name: baseName(filePath), path: filePath, askName: (initial) => requestName('databaseRenameTable', 'databaseTableName', initial) },
+    page: {
+      name: baseName(filePath), path: filePath, askName: (initial) => requestName('databaseRenameTable', 'databaseTableName', initial), stop: stopDatabases,
+    },
     version: 0,
   },
   async (): Promise<void> => undefined,
@@ -2929,6 +2932,27 @@ const relocateOpenFiles = (oldPath: string, newPath: string): void => {
 
 // A database's tab with changes waiting to be committed, as its page last heard.
 const hasPending = (tab: EditorTab): tab is DatabaseTab => tab.kind === 'database' && Boolean(tab.page.pending?.open);
+
+// A long query or comparison stopped: the window's databases are all open in
+// one process (database-client.ts), which is ended, so the changes waiting in
+// any of them go too, and it asks first, naming those.
+const stopDatabases = async (): Promise<void> => {
+  const waiting = [...openFiles.values()].filter(hasPending).map((tab) => tab.name);
+  const question = waiting.length ? t('databaseStopAskWaiting').replace('{name}', waiting.join(', ')) : t('databaseStopAsk');
+  if (await choiceDialog(question, [{ value: 'stop', label: t('databaseStop'), primary: true }]) !== 'stop') return;
+  // A backend that does not answer is restarted, and says so, ending it too.
+  await window.glistAPI.databaseStop().catch((): undefined => undefined);
+};
+
+// The changes waiting in databases were in a process that ended: gone, and
+// their tabs read their files again. Said unless the person was asked first.
+const databasesLost = (asked: boolean): void => {
+  const lost = [...openFiles.values()].filter(hasPending);
+  lost.forEach((tab) => { tab.page.pending = undefined; tab.version += 1; });
+  if (!lost.length) return;
+  if (!asked) notify({ text: t('databaseChangesLost').replace('{name}', lost.map((tab) => tab.name).join(', ')), kind: 'error' });
+  showGroups();
+};
 
 // Before databases let go of their files, which rolls back what was not
 // committed, each with changes waiting asks: Commit, Discard, or Cancel (and
@@ -4271,14 +4295,8 @@ window.glistAPI.onBackendRestarted((error) => {
       actions: [{ label: t('repairIde'), run: () => repair.open() }],
     });
   }
-  // Changes waiting in databases were in the backend that stopped: gone, and
-  // their tabs read their files again.
-  const lost = [...openFiles.values()].filter(hasPending);
-  lost.forEach((tab) => { tab.page.pending = undefined; tab.version += 1; });
-  if (lost.length) {
-    if (!asked) notify({ text: t('databaseChangesLost').replace('{name}', lost.map((tab) => tab.name).join(', ')), kind: 'error' });
-    showGroups();
-  }
+  // Changes waiting in databases were in the backend that stopped.
+  databasesLost(asked);
   // A build or a program the old one ran ended with it.
   matchProcesses(false, false);
   if (!activeProject) return;
@@ -4289,6 +4307,8 @@ window.glistAPI.onBackendRestarted((error) => {
   void git.projectChanged();
   void targetPicker.refresh();
 });
+// Stopped by the person, who was asked, or their process ended by itself.
+window.glistAPI.onDatabasesLost(({ stopped }) => databasesLost(stopped));
 window.glistAPI.onSaveAndClose(async () => {
   if (await saveProjectFiles() && await databasesSettled()) window.close();
 });
