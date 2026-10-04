@@ -6,6 +6,8 @@ import {
 } from 'electron';
 import { eventChannels, invokeChannels, type InvokeMethod } from './api';
 import { appError, backendStartArgument, type BackendStart, type FromBackend, type ToBackend } from './backend-protocol';
+import { flushLog, hideIdentity, logAs, logsFolderMade, logTail, logUpdate, startAppLog } from './app-log';
+import { errorText, isLogLevel, log, timeCall } from './log';
 import { isLanguage, languages, type Language, type Words } from './languages';
 import { defaultProjectsDirectory, studioHome } from './studio-places';
 import { grantMedia, registerMediaScheme, releaseMedia, serveMedia } from './media-protocol';
@@ -87,6 +89,7 @@ const msg = (key: keyof Words['studio']): string => languages[language].studio[k
 // only a window hears of it.
 const showMainError = (error: unknown, stopped: boolean): void => {
   console.error(error);
+  log('error', `${stopped ? 'uncaught error' : 'unhandled rejection'}: ${errorText(error)}`);
   const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   if (window && !window.webContents.isDestroyed()) window.webContents.send(eventChannels.onAppError, appError('main', error));
   else if (stopped) dialog.showErrorBox(msg('mainProcessError'), error instanceof Error && error.stack ? error.stack : String(error));
@@ -110,6 +113,15 @@ const backendStart: BackendStart = {
   studioHead: commit ? { branch: null, commit, ...(commitPage ? { commitPage } : {}) } : null,
 };
 
+// The log (app-log.ts), once this is the Glist Studio running: not a start
+// that only hands over to it, nor one the Windows installer makes and ends.
+if (firstInstance && !require('electron-squirrel-startup')) {
+  startAppLog({
+    version: app.getVersion(), commit, packaged: app.isPackaged, platform: process.platform, arch: process.arch,
+    release: release(), systemVersion: process.getSystemVersion(), versions: process.versions,
+  });
+}
+
 // What a window told its backend that a new one would need, if that one
 // stopped: the last of each setting it sent, and the project it opened.
 const settingCalls = new Set(['setLanguage', 'setCustomPath', 'setCustomEnvironment', 'setRunArguments', 'setAutoConfigure', 'setTarget', 'gitProtection', 'setHiddenFolders', 'setTerminalShell']);
@@ -124,6 +136,9 @@ const remember = (contentsId: number, method: string, args: unknown[], result: u
   if (projectCalls.has(method) && typeof root === 'string') {
     memory.projectRoot = root;
     scheduleSavingWindows();
+    // Its folder's name only; git's name and email there are hidden in the log from now on.
+    log('info', `window ${contentsId} opened project ${path.basename(root)}`);
+    void backends.get(contentsId)?.call('gitIdentity', []).then(hideIdentity, (): undefined => undefined);
   }
 };
 
@@ -223,6 +238,15 @@ const startBackend = (window: BrowserWindow): Backend => {
   const child = utilityProcess.fork(path.join(__dirname, 'backend.js'), [`${backendStartArgument}${JSON.stringify(backendStart)}`], {
     serviceName: 'Glist Studio backend', stdio: 'inherit',
   });
+  const who = `backend of window ${contents.id}`;
+  child.once('spawn', () => log('info', `${who} started (pid ${child.pid})`));
+  // V8 giving up, out of memory: only where, the report itself is far too long.
+  child.on('error', (type, location) => log('error', `${who} ended by a ${type} at ${location}`));
+  // The backend's own lines for the log, and the error about to stop it.
+  child.on('message', (message: FromBackend) => {
+    if (message.kind === 'log' && isLogLevel(message.level)) logAs(`backend ${contents.id}`, message.level, message.text);
+    else if (message.kind === 'crash') log('error', `${who} crashed: ${errorText(message.error)}`);
+  });
   const post = (message: ToBackend): void => child.postMessage(message);
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
   let calls = 0;
@@ -248,6 +272,8 @@ const startBackend = (window: BrowserWindow): Backend => {
   // settings and its project again, and then the window is told, with the
   // error that stopped it.
   child.once('exit', (code) => {
+    // Electron says the exit code only, no signal.
+    log(stopping ? 'info' : 'warn', `${who} ${stopping ? 'stopped' : 'exited'} (code ${code})${stopping || window.isDestroyed() ? '' : ', starting a new one'}`);
     pending.forEach((waiting) => waiting.reject(new Error(`Glist Studio's backend stopped (${code}).`)));
     pending.clear();
     if (stopping || window.isDestroyed()) return;
@@ -259,14 +285,18 @@ const startBackend = (window: BrowserWindow): Backend => {
     })();
     // The window's calls wait until then: before it, reading an open file would fail and close its tab.
     backends.set(contents.id, { ...next, call: (method, args) => restored.then(() => next.call(method, args)) });
-    void restored.then(() => { if (!contents.isDestroyed()) contents.send(eventChannels.onBackendRestarted, crash); });
+    void restored.then(() => {
+      log('info', `${who} restarted, its settings and project given again`);
+      if (!contents.isDestroyed()) contents.send(eventChannels.onBackendRestarted, crash);
+    });
   });
   return {
-    call: (method, args) => new Promise((resolve, reject) => {
+    // A call that takes long is logged, with its method and how long only.
+    call: (method, args) => timeCall(method, new Promise((resolve, reject) => {
       calls += 1;
       pending.set(calls, { resolve, reject });
       post({ kind: 'call', call: { id: calls, method, args } });
-    }),
+    }), `${who}: `),
     shutdown: () => {
       if (!stopping) {
         stopping = true;
@@ -488,10 +518,16 @@ const ownHandlers: Partial<Record<InvokeMethod, OwnHandler>> = {
   restartBackend: async (event) => {
     const backend = backends.get(event.sender.id);
     if (!backend) return false;
+    log('info', `Repair IDE restarts the backend of window ${event.sender.id}`);
     backend.kill();
-    if (!(await answersWithin(backend.exited, 10000))) return false;
+    if (!(await answersWithin(backend.exited, 10000))) {
+      log('warn', `the backend of window ${event.sender.id} did not stop`);
+      return false;
+    }
     const next = backends.get(event.sender.id);
-    return next !== undefined && next !== backend && answersWithin(next.call('ping', []), 30000);
+    const answers = next !== undefined && next !== backend && await answersWithin(next.call('ping', []), 30000);
+    log(answers ? 'info' : 'warn', `the new backend of window ${event.sender.id} ${answers ? 'answers' : 'does not answer'}`);
+    return answers;
   },
   // Repair IDE's Reload the Window: the page starts afresh, Monaco with it, and
   // opens its project again, as a window made for a project does
@@ -517,6 +553,16 @@ const ownHandlers: Partial<Record<InvokeMethod, OwnHandler>> = {
     versions: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node, v8: process.versions.v8 },
     home: homedir(),
   }),
+  // The log (app-log.ts): a line from the window, the last lines for the debug
+  // report, and Help > Open Logs Folder.
+  writeLog: (event, level: unknown, text: unknown) => { if (isLogLevel(level)) logAs(`window ${event.sender.id}`, level, String(text)); },
+  logTail: () => logTail(),
+  openLogsFolder: async () => {
+    const folder = await logsFolderMade();
+    const problem = await shell.openPath(folder);
+    if (problem) throw new Error(problem);
+    return folder;
+  },
   setStartupSettings: async (_event, next: unknown): Promise<GlistStartupSettings> => {
     const settings = { hardwareAcceleration: (next as Partial<GlistStartupSettings> | null)?.hardwareAcceleration !== false };
     await fs.mkdir(studioHome(), { recursive: true });
@@ -592,6 +638,7 @@ const createWindow = (first?: FirstProject, saved?: SavedWindow): BrowserWindow 
   });
   if (first) firstProjects.set(createdWindow.webContents.id, first);
   memories.set(createdWindow.webContents.id, { settings: new Map(), projectRoot: null });
+  log('info', `window ${createdWindow.webContents.id} opened`);
   backends.set(createdWindow.webContents.id, startBackend(createdWindow));
   createdWindow.webContents.on('console-message', (event, _level, message) => {
     const detailMessage = (event as unknown as { message?: string }).message;
@@ -660,6 +707,7 @@ const createWindow = (first?: FirstProject, saved?: SavedWindow): BrowserWindow 
   createdWindow.on('move', scheduleSavingWindows);
   createdWindow.on('resize', scheduleSavingWindows);
   createdWindow.on('closed', () => {
+    log('info', `window ${contentsId} closed`);
     void backends.get(contentsId)?.shutdown();
     backends.delete(contentsId);
     memories.delete(contentsId);
@@ -673,6 +721,7 @@ const createWindow = (first?: FirstProject, saved?: SavedWindow): BrowserWindow 
 };
 
 setUpdateListener((update) => {
+  logUpdate(update);
   BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(eventChannels.onUpdateState, update));
 });
 
@@ -723,6 +772,11 @@ app.on('will-quit', (event) => {
   installOnQuit();
 });
 app.on('activate', () => { if (started && BrowserWindow.getAllWindows().length === 0) createWindow(); });
+// The log's last lines, written before the app is gone.
+app.on('quit', () => {
+  log('info', 'Glist Studio quit');
+  flushLog();
+});
 
 app.on('second-instance', () => {
   const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];

@@ -3,8 +3,8 @@ import { copyText, showTextToCopy } from './clipboard';
 // Help > Copy Debug Info, and Copy Details on an error notice: what someone
 // fixing a problem asks first, as text to paste into an issue. Which Glist
 // Studio this is and what it runs on, the engine and plugins, the window and
-// its settings, and the error with its stack. It is written in English in
-// every language, for whoever reads the issue.
+// its settings, the error with its stack, and the log's last lines. It is
+// written in English in every language, for whoever reads the issue.
 //
 // Nothing personal or secret goes in: the home folder is written ~, git's name
 // and email, mail addresses, tokens, passwords and keys are hidden, and what
@@ -39,6 +39,8 @@ export interface ReportFacts {
   // Hidden wherever they appear: git's name and email.
   personal: string[];
   error?: ReportError;
+  // The log's last lines (log-file.ts), made safe there already.
+  log?: string[];
 }
 
 const hidden = '[hidden]';
@@ -193,6 +195,7 @@ export const formatReport = (facts: ReportFacts): string => {
 
   const settings = redactSettings(facts.settings, scrub);
   section('Settings', settings.length > 0 ? settings : [['state', 'none saved']]);
+  if (facts.log?.length) lines.push('### Log', ...fence(facts.log.map((line) => shorten(scrub(line), 400)).join('\n')), '');
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 };
 
@@ -209,8 +212,9 @@ const ask = <T>(call: () => Promise<T>): Promise<T | null> => Promise.race([
 
 // The report as of now, with the error when there is one.
 export const debugReport = async (error?: ReportError): Promise<string> => {
-  const [app, about, identity] = await Promise.all([
+  const [app, about, identity, log] = await Promise.all([
     ask(() => window.glistAPI.debugInfo()), ask(() => window.glistAPI.aboutInfo()), ask(() => window.glistAPI.gitIdentity()),
+    ask(() => window.glistAPI.logTail()),
   ]);
   const settings: Array<[string, string]> = [];
   try {
@@ -228,6 +232,7 @@ export const debugReport = async (error?: ReportError): Promise<string> => {
     settings,
     personal: identity ? [identity.name, identity.email, identity.suggestedName ?? ''] : [],
     ...(error ? { error } : {}),
+    ...(Array.isArray(log) ? { log } : {}),
   });
 };
 

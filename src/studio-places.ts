@@ -15,3 +15,6 @@ export const defaultProjectsDirectory = (): string => path.join(glistRoot(), 'my
 // the Node.js runtime Settings installs. GLIST_STUDIO_HOME moves it, for tests.
 export const studioHome = (): string => (process.env.GLIST_STUDIO_HOME
   ? path.resolve(process.env.GLIST_STUDIO_HOME) : path.join(glistRoot(), 'GlistStudio'));
+
+// Its log files (log-file.ts), which Help > Open Logs Folder opens.
+export const logsFolder = (): string => path.join(studioHome(), 'logs');

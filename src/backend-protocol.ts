@@ -1,3 +1,4 @@
+import type { LogLevel } from './log';
 import type { RepositoryHead } from './repository-head';
 import type { BackendCall, BackendReply } from './studio-rpc';
 
@@ -25,6 +26,8 @@ export type ToBackend =
 export type FromBackend =
   | { kind: 'reply'; reply: BackendReply }
   | { kind: 'event'; channel: string; payload: unknown }
+  // A line for the log, which only the main process writes (log-file.ts).
+  | { kind: 'log'; level: LogLevel; text: string }
   | { kind: 'host'; id: number; op: 'trash' | 'showItemInFolder' | 'openPath'; path: string }
   | { kind: 'crash'; error: GlistAppError };
 

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
+import { log } from './log';
 
 export interface ProcessLaunch {
   command: string;
@@ -24,9 +25,11 @@ export class MessageProcess {
   private pending = Buffer.alloc(0);
   private stderr: string[] = [];
 
+  // Named, its start and exit are logged (log.ts): clangd's.
   constructor(
     private readonly onMessage: (message: unknown) => void,
     private readonly onExit: (status: ProcessStatus) => void,
+    private readonly name = '',
   ) {}
 
   start(launch: ProcessLaunch): Promise<ProcessStatus> {
@@ -37,14 +40,21 @@ export class MessageProcess {
     this.stderr = [];
     return new Promise((resolve) => {
       let started = false;
-      child.once('spawn', () => { started = true; resolve({ running: true, message: '' }); });
+      child.once('spawn', () => {
+        started = true;
+        if (this.name) log('info', `${this.name} started (pid ${child.pid})`);
+        resolve({ running: true, message: '' });
+      });
       child.once('error', (error) => {
+        if (this.name && !started) log('warn', `${this.name} did not start: ${error.message}`);
         if (this.child !== child) return;
         this.child = null;
         if (started) this.onExit({ running: false, message: error.message });
         else resolve({ running: false, message: error.message });
       });
       child.once('exit', (code, signal) => {
+        // Stopped, it is no longer this one's.
+        if (this.name && started) log(this.child === child ? 'warn' : 'info', `${this.name} ${this.child === child ? 'exited' : 'stopped'} (${signal ?? `code ${code}`})`);
         if (this.child !== child) return;
         this.child = null;
         const detail = this.stderr.length > 0 ? `\n${this.stderr.join('\n')}` : '';

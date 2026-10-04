@@ -206,6 +206,9 @@ export const setUpRepair = (host: RepairHost): Repair => {
       render();
       steps = await runRepair(checks, (now) => { steps = now; if (!closed) render(); }, () => closed);
       running = false;
+      // What it found and did, into the log, in English as Copy Details has it.
+      repairLog(steps, languages.en.interface, '').split('\n').filter((line) => /^(?:- |summary: )/.test(line))
+        .forEach((line) => { window.glistAPI.writeLog('info', `Repair IDE ${line.replace(/^- /, '')}`).catch((): undefined => undefined); });
       if (!closed) render();
     };
 

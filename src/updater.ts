@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, promises as fs, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { app, shell } from 'electron';
+import { log } from './log';
 import { studioHome } from './studio';
 import {
   assetFor, download, heldBack, installMacApp, isNewer, keptAppImage, newerRelease, releaseAt, releases, replaceAppImage,
@@ -272,10 +273,12 @@ export const openUpdatePage = (): void => {
 // On quit: a downloaded update takes the app's place, and opens if that was asked.
 export const installOnQuit = (): void => {
   if (!staged) return;
+  log('info', `installing ${staged.version}${staged.rollback ? ' (going back)' : ''}${restartRequested ? ', then restarting' : ''}`);
   try {
     staged.install(restartRequested);
-  } catch {
+  } catch (error) {
     // It stays downloaded, and the next start offers it again.
+    log('warn', `installing ${staged.version} failed: ${error instanceof Error ? error.message : String(error)}`);
   }
   staged = null;
 };

@@ -52,6 +52,7 @@ import { describeDebugger, installGdb, setUpDebuggerSettings } from './debugger-
 import { GitPanel, type GitPanelView } from './git-panel';
 import { notify, type Notice } from './notifications';
 import { copyReport, errorMessage, ignorableError, setReportWindow } from './debug-report';
+import { errorText as errorLine } from './log';
 import { setUpProjectPicker } from './project-picker';
 import { AboutView } from './about-view';
 import { StudioTerminal } from './terminal';
@@ -760,18 +761,26 @@ const copyDebugInfo = (): Promise<void> => copyReport().then(
   () => notify({ text: t('debugInfoCopied'), kind: 'success' }),
   (error: unknown) => noticeFailed('copyDetailsFailed', error),
 );
+// Help > Open Logs Folder. The browser build's log is on the server's
+// computer, which the page cannot open: it says where.
+const openLogsFolder = (): Promise<void> => window.glistAPI.openLogsFolder().then(
+  (folder) => { if (!window.glistFiles) notify({ text: t('logsFolderOnServer'), detail: folder }); },
+  (error: unknown) => noticeFailed('logsFolderFailed', error),
+);
 
 // Errors nothing caught, in the page, the main process or the backend: each
 // different one once, as a notice with Copy Details. Some are no fault.
 const shownErrors = new Set<string>();
-const uncaughtError = (error: unknown, fallback = ''): void => {
+const uncaughtError = (error: unknown, fallback = '', inPage = ''): void => {
   const message = errorMessage(error, fallback);
   if (ignorableError(error, message) || shownErrors.has(message)) return;
   shownErrors.add(message);
+  // The page's own go into the log as well; the main process and the backend write theirs.
+  if (inPage) window.glistAPI.writeLog('error', `${inPage}: ${errorLine(error ?? fallback)}`).catch((): undefined => undefined);
   notify({ text: t('unexpectedError'), detail: message, kind: 'error', error });
 };
-window.addEventListener('error', (event) => uncaughtError(event.error, event.message));
-window.addEventListener('unhandledrejection', (event) => uncaughtError(event.reason));
+window.addEventListener('error', (event) => uncaughtError(event.error, event.message, 'uncaught error in the page'));
+window.addEventListener('unhandledrejection', (event) => uncaughtError(event.reason, '', 'unhandled rejection in the page'));
 window.glistAPI.onAppError((error) => uncaughtError(error));
 
 const setProcessStatus = (label: string, active: boolean, error = false): void => {
@@ -3494,6 +3503,7 @@ const configureMenus = (): void => {
         ...(canUpdate() ? [item(t('checkForUpdates'), checkForUpdates)] : []),
         { kind: 'separator' },
         item(t('copyDebugInfo'), () => { void copyDebugInfo(); }),
+        item(t('openLogsFolder'), () => { void openLogsFolder(); }),
         ...(window.glistFiles ? [item(t('toggleDevTools'), () => { void window.glistAPI.toggleDevTools(); }, { shortcut: isMac ? 'Cmd+Alt+I' : 'Ctrl+Shift+I' })] : []),
         item(t('repairIde'), () => repair.open()),
         item(t('aboutMenu'), () => openSettings('about')),

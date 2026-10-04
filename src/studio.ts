@@ -1197,6 +1197,7 @@ const writeProjectFile = async (filePath: string, contents: string): Promise<boo
 const clangd = new MessageProcess(
   (message) => sendToRenderer('clangd:message', message),
   (status) => sendToRenderer('clangd:status', status),
+  'clangd',
 );
 
 const startClangd = async (): Promise<GlistClangdStatus> => {

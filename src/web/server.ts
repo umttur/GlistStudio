@@ -11,7 +11,10 @@ import { mediaIdOf, type MediaSource } from '../media';
 import { mediaFile, MediaGrants } from '../media-serve';
 import { readRepositoryHead } from '../repository-head';
 import { initializeStudio } from '../studio';
+import { logsFolder } from '../studio-places';
 import { answer, backendHandlers, stopBackend, type BackendCall } from '../studio-rpc';
+import { errorText, isLogLevel, log, timeCall } from '../log';
+import { openLogFile } from '../log-file';
 
 export interface WebServerOptions {
   port: number;
@@ -47,6 +50,15 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
   };
   const unavailable = (): never => { throw new Error('Not available in the browser.'); };
   const trashDirectory = path.join(os.tmpdir(), 'glist-studio-trash');
+  const version = (JSON.parse(readFileSync(path.join(options.sourceRoot, 'package.json'), 'utf8')) as { version: string }).version;
+
+  // The server's own log, beside the app's (log-file.ts). An error nothing
+  // caught ends the server: it is written down before it does.
+  const logFile = openLogFile('glist-studio-web', 'web');
+  process.on('uncaughtExceptionMonitor', (error) => {
+    log('error', `uncaught error: ${errorText(error)}`);
+    logFile.flushSync();
+  });
 
   initializeStudio({
     send: (channel, payload) => send({ channel, payload }),
@@ -66,12 +78,23 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
     openPath: async () => unavailable(),
     templateRoot: options.templateRoot,
     projectsDirectory: options.projectsDirectory,
-    version: (JSON.parse(readFileSync(path.join(options.sourceRoot, 'package.json'), 'utf8')) as { version: string }).version,
+    version,
     // Read each time: the checkout can move while the server runs.
     studioHead: () => readRepositoryHead(options.sourceRoot),
   });
 
-  const handlers: Handlers = { ...backendHandlers, setTheme: () => undefined };
+  const handlers: Handlers = {
+    ...backendHandlers,
+    setTheme: () => undefined,
+    // The log: the page's lines, the last ones for the debug report, and where
+    // it is, which the browser cannot open.
+    writeLog: (level: unknown, text: unknown) => { if (isLogLevel(level)) logFile.write('page', level, String(text)); },
+    logTail: () => logFile.tail(),
+    openLogsFolder: async () => {
+      await fs.mkdir(logsFolder(), { recursive: true });
+      return logsFolder();
+    },
+  };
   // Videos and sounds play from /media/<name>/<file>, by names given to the
   // page that asked and forgotten when it goes (media-serve.ts).
   const media = new MediaGrants<WebSocket>();
@@ -79,6 +102,7 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
   // instead, as the app's window is of its backend's.
   process.on('unhandledRejection', (reason) => {
     console.error(reason);
+    log('error', `unhandled rejection: ${errorText(reason)}`);
     send({ channel: eventChannels.onAppError, payload: appError('backend', reason) });
   });
 
@@ -141,6 +165,7 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
     // One page drives the backend at a time; a newer one takes over.
     client?.close(4000, 'Glist Studio was opened in another tab.');
     client = socket;
+    log('info', 'page connected');
     const socketHandlers: Handlers = {
       ...handlers,
       openMedia: async (filePath: unknown) => {
@@ -152,10 +177,18 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
     socket.on('message', async (data) => {
       let request: BackendCall;
       try { request = JSON.parse(data.toString()); } catch { return; }
-      const reply = await answer(socketHandlers, request);
+      // A call that takes long is logged, with its method and how long only.
+      const reply = await timeCall(request.method, answer(socketHandlers, request));
+      // A project opened: its folder's name, and git's name and email there hidden in the log from now on.
+      const root = 'result' in reply ? (reply.result as { root?: unknown } | null)?.root : undefined;
+      if (typeof root === 'string' && /^(?:openProject|openProjectPath|createProject)$/.test(String(request.method))) {
+        log('info', `opened project ${path.basename(root)}`);
+        void Promise.resolve(backendHandlers.gitIdentity?.()).then((identity) => logFile.addIdentity(identity), (): undefined => undefined);
+      }
       if (socket === client) send(reply);
     });
     socket.on('close', () => {
+      log('info', 'page closed');
       media.releaseOwner(socket);
       if (socket === client) client = null;
     });
@@ -164,6 +197,11 @@ export const startWebServer = (options: WebServerOptions): Promise<http.Server> 
   server.on('close', stopBackend);
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.port, '127.0.0.1', () => resolve(server));
+    server.listen(options.port, '127.0.0.1', () => {
+      void readRepositoryHead(options.sourceRoot).catch((): null => null).then((head) => log('info',
+        `Glist Studio ${version} web server started on port ${options.port} (commit ${head?.commit ?? 'unknown'}), `
+        + `${process.platform} ${process.arch} (release ${os.release()}), Node ${process.versions.node}`));
+      resolve(server);
+    });
   });
 };

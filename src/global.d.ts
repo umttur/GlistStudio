@@ -871,6 +871,11 @@ interface Window {
     glistStatus(): Promise<GlistInstallStatus>;
     aboutInfo(): Promise<GlistAbout>;
     debugInfo(): Promise<GlistDebugInfo>;
+    // Glist Studio's log (log-file.ts): a line from the window, the last lines made safe, and its folder,
+    // which the app opens and the browser build only names.
+    writeLog(level: 'info' | 'warn' | 'error', text: string): Promise<void>;
+    logTail(): Promise<string[]>;
+    openLogsFolder(): Promise<string>;
     // Help > Repair IDE. Ping is answered once the backend's work in hand lets it, so a stuck one never does.
     ping(): Promise<boolean>;
     // The app's: ends the window's backend and what it started; true once the new one answers.
