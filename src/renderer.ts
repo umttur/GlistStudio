@@ -108,6 +108,8 @@ interface DiffTab {
   rightLabel: string;
   // Why there are no lines to compare, such as a binary file.
   message: string;
+  // Its two versions have arrived once; until then it compares two empty texts.
+  filled?: boolean;
 }
 
 // A plugin's README, opened from the Plugins view, in a tab of its own.
@@ -1662,10 +1664,14 @@ const showDiffTab = (view: GroupView, tab: DiffTab): void => {
   pane.open.disabled = tab.target === null && change?.state === 'deleted';
   if (viewer.getModel()?.modified === tab.modified) return;
   viewer.setModel({ original: tab.original, modified: tab.modified });
-  // A diff opens at its first change, once it is known.
+  // A diff opens at its first change, once it is known: of its two versions,
+  // not of the two empty texts a tab shown before they arrive compares first
+  // (a transient tab is shown at once), and only then, not on every refresh.
   const shown = viewer.onDidUpdateDiff(() => {
+    if (viewer.getModel()?.modified !== tab.modified) { shown.dispose(); return; }
+    if (!tab.filled) return;
     shown.dispose();
-    if (viewer.getModel()?.modified === tab.modified) viewer.revealFirstDiff();
+    viewer.revealFirstDiff();
   });
 };
 
@@ -1696,6 +1702,7 @@ const fillDiff = async (tab: DiffTab): Promise<void> => {
   if (tab.original.isDisposed()) return;
   if (tab.original.getValue() !== (left.text ?? '')) tab.original.setValue(left.text ?? '');
   if (tab.modified.getValue() !== (right.text ?? '')) tab.modified.setValue(right.text ?? '');
+  tab.filled = true;
   tab.leftLabel = tab.base ? versionLabel(tab.base, left, tab.file) : t('diffMissing');
   tab.rightLabel = versionLabel(tab.target, right, tab.file);
   tab.message = [left, right].some((version) => version.binary) ? t('diffBinary')
