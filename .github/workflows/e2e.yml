@@ -1,0 +1,78 @@
+name: End-to-end
+
+# The studio's main flows driven in a browser against the browser build
+# (tests/e2e, npm run e2e): opening projects, editing and saving, tabs and
+# split, search, settings, terminals, Git, databases, images, models and media.
+# Only on pull requests that change what the studio is made of, and by hand from
+# the Actions tab; never on a push to main, so it cannot hold up a release
+# (release.yml builds those, untouched by this). The workflow can only read the
+# repository and uses no secrets, so a pull request from a fork runs it the same.
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/e2e/**'
+      - 'scripts/**'
+      - 'glistapp-template/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'webpack.*.ts'
+      - 'forge.config.ts'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request stops the run of the one before.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: End-to-end (browser build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The browser build runs on Node and needs no Electron. Electron 44's
+      # package downloads its binary only when first required, never on install;
+      # this keeps it so should an install script come back.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # Four flows at a time, one per core.
+      E2E_JOBS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Playwright's Chromium, kept between runs by the version the lockfile pins.
+      - id: playwright
+        name: Playwright version
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # Downloads Chromium's headless shell (what headless runs use) unless the
+      # cache had it; the libraries it needs are installed with apt each time.
+      - run: npx playwright install --with-deps --only-shell chromium
+      # clangd for the flow that formats on save and goes to definitions (it
+      # skips itself without it). apt's lists are fresh from the step before.
+      - name: clangd
+        run: command -v clangd || sudo apt-get install -y --no-install-recommends clangd
+      - name: End-to-end flows
+        # A flow that fails is run once more; one that then passes is reported
+        # as flaky in the summary, not hidden.
+        run: npm run e2e -- --retries 1
+      - name: Screenshots and server logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: out/e2e-artifacts
+          retention-days: 5
+          if-no-files-found: ignore
