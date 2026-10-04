@@ -18,8 +18,10 @@ for (const [file, kind, type] of [
 }
 assert.equal(mediaType('x.mp4').format, 'MP4');
 assert.equal(mediaType('x.opus').format, 'Opus');
-// Not claimed: a browser cannot play Matroska as such, and the rest are not media.
-for (const file of ['x.mkv', 'x.avi', 'x.png', 'mp4', 'clips.mp4/readme', 'x.', '']) assert.equal(mediaType(file), null, file);
+// Matroska as Chromium plays it, with the codecs it knows.
+assert.deepEqual(mediaType('clip.MKV'), { kind: 'video', type: 'video/x-matroska', format: 'Matroska' });
+// Not claimed: AVI, which Chromium does not play, and what is not media.
+for (const file of ['x.avi', 'x.png', 'mp4', 'clips.mp4/readme', 'x.', '']) assert.equal(mediaType(file), null, file);
 
 // Ranges as players ask for them, and what is made of the rest.
 assert.equal(parseRange(undefined, 100), null);

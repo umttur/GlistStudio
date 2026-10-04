@@ -20,6 +20,9 @@ const types: Record<string, MediaType> = {
   webm: { kind: 'video', type: 'video/webm', format: 'WebM' },
   ogv: { kind: 'video', type: 'video/ogg', format: 'Ogg' },
   mov: { kind: 'video', type: 'video/quicktime', format: 'QuickTime' },
+  // Chromium plays Matroska with the codecs it knows (H.264, VP9, AV1 with AAC
+  // or Opus); one with others says it cannot be played, as an MOV may.
+  mkv: { kind: 'video', type: 'video/x-matroska', format: 'Matroska' },
   wav: { kind: 'audio', type: 'audio/wav', format: 'WAV' },
   mp3: { kind: 'audio', type: 'audio/mpeg', format: 'MP3' },
   ogg: { kind: 'audio', type: 'audio/ogg', format: 'Ogg' },
