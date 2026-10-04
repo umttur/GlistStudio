@@ -7,6 +7,7 @@ import http from 'node:http';
 import { createGitService, credentialListener, windowsAskpassScript } from '../src/git-service.ts';
 import { createHostProtection, githubRepository, matchesBranch, protectionFrom } from '../src/git-protection.ts';
 import { githubCommitPage, readRepositoryHead } from '../src/repository-head.ts';
+import { toolLanguage } from '../src/tool-language.ts';
 
 // Windows's askpass: sh hands PowerShell the question and the form, encoded, with
 // MSYS's path conversion off. A stand-in powershell.exe says what it was given.
@@ -68,7 +69,8 @@ assert.deepEqual(protectionFrom({ on: false, branches: [' dev ', '', 3] }), { on
 
 // The Git service against a project made for the test and a remote beside it.
 // Run with jiti, which resolves the service's own imports.
-const root = mkdtempSync(path.join(tmpdir(), 'glist-git-service-'));
+// The long name of the temp folder: Windows's tmpdir may be an 8.3 short one (RUNNER~1), and git answers with the long.
+const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'glist-git-service-')));
 // Global settings, such as the identity Settings writes, stay in the test's
 // folder, and git makes up no name or email of its own.
 Object.assign(process.env, { HOME: root, XDG_CONFIG_HOME: root, GIT_CONFIG_NOSYSTEM: '1' });
@@ -108,7 +110,9 @@ const run = async (action, repositoryRoot) => {
   assert.equal(result.success, true, `${action.kind}: ${result.message}`);
   return result;
 };
-const changes = async () => Object.fromEntries((await git.gitStatus()).repository.changes.map((change) => [path.relative(project, change.path), change.state]));
+// Relative paths with / on every system, as the expectations below write them.
+const relative = (from, to) => path.relative(from, to).split(path.sep).join('/');
+const changes = async () => Object.fromEntries((await git.gitStatus()).repository.changes.map((change) => [relative(project, change.path), change.state]));
 
 try {
   // Not a repository yet; making one ignores the build folder from the start.
@@ -184,14 +188,14 @@ try {
   status = await git.gitStatus();
   assert.equal(status.repository.operation, 'merge');
   assert.match(status.repository.operationSubject, /feature/);
-  assert.deepEqual(status.repository.changes.filter((change) => change.conflict).map((change) => [path.relative(project, change.path), change.conflict]),
-    [[path.join('src', 'main.cpp'), 'UU']]);
+  assert.deepEqual(status.repository.changes.filter((change) => change.conflict).map((change) => [relative(project, change.path), change.conflict]),
+    [['src/main.cpp', 'UU']]);
   await run({ kind: 'resolve', path: inProject('src/main.cpp'), side: 'theirs' });
   assert.equal(read('src/main.cpp'), 'int main() {\n  return 2;\n}\n');
   // Taken back, the conflict and its markers return.
   await run({ kind: 'unresolve', path: inProject('src/main.cpp') });
   assert.match(read('src/main.cpp'), /^<<<<<<< ours$/m);
-  assert.equal((await changes())[path.join('src', 'main.cpp')], 'conflict');
+  assert.equal((await changes())['src/main.cpp'], 'conflict');
   await run({ kind: 'resolve', path: inProject('src/main.cpp'), side: 'mine' });
   assert.equal(read('src/main.cpp'), 'int main() {\n  return 3;\n}\n');
   await run({ kind: 'unresolve', path: inProject('src/main.cpp') });
@@ -237,8 +241,8 @@ try {
   const [stash] = await git.gitStashes();
   assert.equal(stash.message, 'On main: Try something');
   // The changed file, and the new files stashed with it.
-  assert.deepEqual((await git.gitCommitDetails(stash.name)).files.map((file) => [path.relative(project, file.path), file.state]),
-    [['src/main.cpp', 'modified'], ['notes.txt', 'untracked'], [path.join('src', 'Other.h'), 'untracked']]);
+  assert.deepEqual((await git.gitCommitDetails(stash.name)).files.map((file) => [relative(project, file.path), file.state]),
+    [['src/main.cpp', 'modified'], ['notes.txt', 'untracked'], ['src/Other.h', 'untracked']]);
   await run({ kind: 'unstash', name: stash.name, pop: true });
   assert.equal(read('src/main.cpp'), 'stashed\n');
   assert.equal(read('notes.txt'), 'mine\n');
@@ -558,7 +562,7 @@ try {
 // Where a checkout stands, read from its .git folder for Settings > About,
 // against git's own answers.
 {
-  const headRoot = mkdtempSync(path.join(tmpdir(), 'glist-head-'));
+  const headRoot = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'glist-head-')));
   const headEnv = { ...process.env, GIT_CONFIG_GLOBAL: path.join(headRoot, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1' };
   writeFileSync(headEnv.GIT_CONFIG_GLOBAL, '[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n');
   const headGit = (folder, ...args) => execFileSync('git', args, { cwd: folder, env: headEnv, encoding: 'utf8' }).trim();
@@ -619,7 +623,7 @@ console.log('Git service tests passed.');
 // its language and version: the credential helpers, push's porcelain lines and
 // the repository's state.
 {
-  const base = mkdtempSync(path.join(tmpdir(), 'glist-git-why-'));
+  const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'glist-git-why-')));
   const plainEnv = () => {
     const env = { ...process.env, HOME: base, XDG_CONFIG_HOME: base, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' };
     ['GIT_ASKPASS', 'SSH_ASKPASS', 'LANGUAGE', 'LC_ALL', 'LC_MESSAGES'].forEach((key) => delete env[key]);
@@ -672,8 +676,10 @@ console.log('Git service tests passed.');
 
     // The same failures with git answering in Turkish: the same flags, git's own words left as they are.
     const candidates = ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git'];
+    // Asked as the service asks (toolLanguage), so a system whose locale cannot
+    // carry Turkish, such as a CI runner's C.UTF-8, skips rather than fails.
     const turkishGit = candidates.find((candidate) => existsSync(candidate) && /deposu/.test(spawnSync(candidate, ['-C', base, 'rev-parse'],
-      { env: { ...plainEnv(), LANGUAGE: 'tr', LANG: 'en_US.UTF-8' }, encoding: 'utf8' }).stderr));
+      { env: { ...plainEnv(), ...toolLanguage('tr', plainEnv()) }, encoding: 'utf8' }).stderr));
     if (!turkishGit) {
       console.log('No git with Turkish here: the Turkish checks are skipped.');
     } else {

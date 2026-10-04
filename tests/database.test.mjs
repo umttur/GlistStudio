@@ -196,7 +196,10 @@ try {
   // One elsewhere is only read; a file that is not SQLite is refused.
   await databases.query(elsewhere, 'SELECT 1').catch(() => undefined);
   databases.close(elsewhere);
-  new DatabaseSync(elsewhere).exec('CREATE TABLE t (a); INSERT INTO t VALUES (1)');
+  // Closed again: Windows deletes no file that is open, as the folder is at the end.
+  const seeded = new DatabaseSync(elsewhere);
+  seeded.exec('CREATE TABLE t (a); INSERT INTO t VALUES (1)');
+  seeded.close();
   assert.equal((await databases.schema(elsewhere)).readOnly, true);
   const refused = await databases.query(elsewhere, 'INSERT INTO t VALUES (2)');
   assert.match(refused[0].error, /readonly/);

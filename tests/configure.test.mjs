@@ -6,6 +6,14 @@ import path from 'node:path';
 import { initializeStudio, openProjectAt, stopWatchingConfiguration, studio } from '../src/studio.ts';
 
 // Configuring with real CMake, on a small project with no engine. Run with jiti.
+// On Windows the studio builds only with Glist's own CMake and clang (zbin's),
+// which the Glist installer brings, never the system's; without them, as on a
+// CI runner, there is no cmake to start (spawn cmake ENOENT), so the test is
+// left out there.
+if (process.platform === 'win32' && !process.env.GLIST_ZBIN_TESTS) {
+  console.log('Configure tests skipped: Glist\'s Windows toolchain (zbin) is not here.');
+  process.exit(0);
+}
 const root = mkdtempSync(path.join(tmpdir(), 'glist-configure-'));
 const apps = path.join(root, 'myglistapps');
 const cmake = (name, extra = '') => `cmake_minimum_required(VERSION 3.10)\nproject(${name} CXX)\n${extra}add_executable(${name} main.cpp)\n`;

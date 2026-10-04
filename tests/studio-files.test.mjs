@@ -5,7 +5,7 @@ import path from 'node:path';
 import { codeStyleFor, parseStyle } from '../src/code-style.ts';
 import { glistCodeStyle } from '../src/default-code-style.ts';
 import { changedLines, codeLines, editsWithin } from '../src/format-lines.ts';
-import { initializeStudio, openProjectAt, pluginDllFolders, studio, systemFolders } from '../src/studio.ts';
+import { initializeStudio, openProjectAt, pluginDllFolders, stopGit, stopWatchingConfiguration, studio, systemFolders } from '../src/studio.ts';
 
 // What the studio may write: the project, and the engine and the plugins the
 // project names, which only build from an app. Run with jiti.
@@ -248,4 +248,8 @@ try {
   assert.deepEqual(editsWithin([edit(5, 1, 5, 1, '\t'), edit(5, 1, 5, 1, '\t')], ranges), [edit(5, 1, 5, 1, '\t')]);
 }
 
+// Opening a project started watching its git and its CMake files; those watchers
+// would keep Node running on Windows once the tests are done.
+stopGit();
+stopWatchingConfiguration();
 console.log('Studio file tests passed.');

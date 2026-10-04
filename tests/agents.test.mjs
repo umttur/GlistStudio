@@ -25,11 +25,13 @@ try {
 
   // Glist's zbin, with Windows's bundled node or a node on PATH.
   write(path.join(glist, 'zbin', 'glistzbin-macos', 'gemini', 'node_modules', '@google', 'gemini-cli', 'bundle', 'gemini.js'), '');
-  write(path.join(bin, 'node'), '#!/bin/sh\n', 0o755);
+  // A node on PATH: node.exe on Windows, which finds commands by their extension.
+  const pathNode = path.join(bin, process.platform === 'win32' ? 'node.exe' : 'node');
+  write(pathNode, '#!/bin/sh\n', 0o755);
   gemini = await status('gemini');
   assert.equal(gemini.source, 'glist');
   let launch = await agentLaunch('gemini', places);
-  assert.equal(launch.file, path.join(bin, 'node'));
+  assert.equal(launch.file, pathNode);
   assert.match(launch.args[0], /gemini-cli[/\\]bundle[/\\]gemini\.js$/);
 
   // Installed from Settings: a package with a bin entry and the Studio's Node.js.

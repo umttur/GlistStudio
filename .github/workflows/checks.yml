@@ -1,0 +1,51 @@
+name: Checks
+
+# Each pull request is checked, on the three systems Glist Studio runs on:
+# types, lint and the tests. Only checked: nothing is packaged, signed or
+# published here, which release.yml alone does once a change is on main. The
+# workflow can only read the repository and uses no secrets, so a pull request
+# from a fork runs it just the same.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request stops the checks of the one before.
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      # The tests need Node, not Electron; its download would only take time.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Tests that commit in a repository of their own need a name to commit as.
+      - name: Git identity for the tests
+        run: |
+          git config --global user.name "Glist Studio Checks"
+          git config --global user.email "checks@example.invalid"
+      - name: Types
+        run: npx tsc --noEmit -p .
+      - name: Lint
+        run: npm run lint
+      # Each of npm test's commands by itself, with a time limit, so every one
+      # that fails shows, and one that hangs fails alone (scripts/run-tests.mjs).
+      - name: Tests
+        run: node scripts/run-tests.mjs
