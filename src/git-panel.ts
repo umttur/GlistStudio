@@ -234,14 +234,20 @@ class LogView {
     this.loading = false;
     this.pathChip.hidden = !this.path;
     this.pathChip.replaceChildren(icon('history'), t('historyOf').replace('{name}', this.path ? baseName(this.path) : ''), icon('close'));
-    await this.fillRefs();
-    await this.more();
+    await this.fillRefs(generation);
+    if (generation === this.generation) await this.more();
   }
 
-  private async fillRefs(): Promise<void> {
-    const current = this.refSelect.value;
+  // The branches to pick from, keeping the one picked. A load overtaken by
+  // another while it asked leaves them to that one: opened right after a
+  // project, two loads overlapped and the older set the picker last.
+  private async fillRefs(generation: number): Promise<void> {
+    // Before the first fill there is nothing picked, which would read as ''
+    // (All branches); the current branch is what the log starts on.
+    const current = this.refSelect.options.length > 0 ? this.refSelect.value : 'HEAD';
     let branches: GlistGitBranch[] = [];
     try { branches = await window.glistAPI.gitBranches(this.place.root); } catch { /* No repository. */ }
+    if (generation !== this.generation) return;
     const option = (value: string, label: string): HTMLOptionElement => {
       const node = element('option', undefined, label);
       node.value = value;
