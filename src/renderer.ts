@@ -2620,7 +2620,11 @@ const createTreeRow = (entry: GlistFileEntry, depth: number, options: TreeRowOpt
       showExpanded();
       if (!children.hidden) await loadChildren();
     };
-    if (!children.hidden) { showExpanded(); void loadChildren(); }
+    if (!children.hidden) {
+      showExpanded();
+      const loading = loadChildren();
+      treeLoads?.push(loading);
+    }
     row.addEventListener('click', select);
     row.addEventListener('dblclick', () => { void toggleExpanded(); });
     arrow.addEventListener('click', (event) => {
@@ -2712,13 +2716,22 @@ const dependencySection = async (projectRoot: string): Promise<HTMLElement | nul
 // Only the latest load fills the tree, so overlapping loads and project
 // switches cannot mix their rows.
 let treeGeneration = 0;
+// The open folders' contents being read while the tree is made again, nested
+// ones too: the new tree goes in once they are all there, the same height as
+// the one it replaces, so where it was scrolled to stays. Put in half-made, a
+// tree shorter for a moment lost its place, as if it jumped.
+let treeLoads: Array<Promise<void>> | null = null;
 
-const loadProjectTree = async (): Promise<void> => {
+// The tree made again, where it was scrolled to kept; a file or folder just
+// made is brought into sight if it is not.
+const loadProjectTree = async (reveal?: string): Promise<void> => {
   if (!activeProject) return;
   treeGeneration += 1;
   const generation = treeGeneration;
   clearTreeSelection();
   let rows: Array<HTMLElement | string>;
+  const loads: Array<Promise<void>> = [];
+  treeLoads = loads;
   try {
     rows = (await window.glistAPI.listDirectory(activeProject.root)).map((entry) => createTreeRow(entry, 0));
   } catch (error) {
@@ -2726,11 +2739,16 @@ const loadProjectTree = async (): Promise<void> => {
   }
   const dependencies = await dependencySection(activeProject.root);
   if (dependencies) rows.push(dependencies);
+  while (loads.length > 0) await Promise.all(loads.splice(0));
+  if (treeLoads === loads) treeLoads = null;
   if (generation === treeGeneration) {
     // A user can still click the old rows while the asynchronous reload is in
     // progress. Clear that late selection before those rows leave the DOM.
     clearTreeSelection();
+    const scrolled = fileTree.scrollTop;
     fileTree.replaceChildren(...rows);
+    fileTree.scrollTop = scrolled;
+    if (reveal) fileTree.querySelector(`.tree-row[data-path="${CSS.escape(reveal)}"]`)?.scrollIntoView({ block: 'nearest' });
   }
 };
 
@@ -2782,7 +2800,7 @@ const createFile = async (): Promise<void> => {
     const createdPath = await window.glistAPI.createFile(directory, name);
     await reloadOpenCmake();
     revealTargetDirectory(directory);
-    await loadProjectTree();
+    await loadProjectTree(createdPath);
     await openFile(createdPath, name);
     noticeDone('fileCreated', createdPath);
   } catch (error) {
@@ -2798,7 +2816,7 @@ const createFolder = async (): Promise<void> => {
   try {
     const createdPath = await window.glistAPI.createDirectory(directory, name);
     revealTargetDirectory(directory);
-    await loadProjectTree();
+    await loadProjectTree(createdPath);
     noticeDone('folderCreated', createdPath);
   } catch (error) {
     noticeFailed('createFailed', error);
@@ -2815,7 +2833,7 @@ const createClass = async (): Promise<void> => {
     const created = await window.glistAPI.createCppClass(directory, className);
     await reloadOpenCmake();
     revealTargetDirectory(directory);
-    await loadProjectTree();
+    await loadProjectTree(created.header);
     await openFile(created.header, `${className}.h`);
     notify({ text: `${t('classCreated')}: ${className}`, kind: 'success' });
   } catch (error) {
@@ -3756,7 +3774,7 @@ stopButton.addEventListener('click', stopProject);
 newFileButton.addEventListener('click', createFile);
 newFolderButton.addEventListener('click', createFolder);
 deleteEntryButton.addEventListener('click', deleteSelectedEntries);
-refreshButton.addEventListener('click', loadProjectTree);
+refreshButton.addEventListener('click', () => { void loadProjectTree(); });
 clearOutputButton.addEventListener('click', () => {
   const panelTerminal = terminalFor(panelView);
   if (panelTerminal) panelTerminal.clear();
