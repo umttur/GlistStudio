@@ -113,45 +113,45 @@ assert.equal(preview.isOpen('d2'), true);
 preview.open('d3', 0, true);
 assert.equal(preview.activate('d3'), null);
 preview.split('a.cpp', 0);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp [a.cpp]'], 'Split Right from a tab behind it leaves it');
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp [a.cpp]'], 'Split Right from a tab behind it leaves it');
 assert.equal(preview.focused, 1);
 preview.focus(0);
 preview.focus(1);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp [a.cpp]'], 'the other side being worked in leaves it');
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp [a.cpp]'], 'the other side being worked in leaves it');
 // One per side: each side has its own.
 preview.open('d4', 1, true);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp ~d4 [~d4]']);
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp ~d4 [~d4]']);
 preview.open('d5', 1, true);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp ~d5 [~d5]'], 'a second on the right replaces the right one only');
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp ~d5 [~d5]'], 'a second on the right replaces the right one only');
 // A tab the side has for good is only brought to the front, never made
 // transient; the existing preview stays behind it.
 assert.equal(preview.open('a.cpp', 1, true), null);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp ~d5 [a.cpp]']);
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp ~d5 [a.cpp]']);
 // A file only on the other side gets a transient tab on this one, closed like any tab.
 preview.open('b.cpp', 1, true);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp ~b.cpp [~b.cpp]']);
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp ~b.cpp [~b.cpp]']);
 preview.close('b.cpp', 1);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp ~d3 [~d3]', 'a.cpp [a.cpp]']);
+assert.deepEqual(marked(preview), ['a.cpp ~d3 b.cpp [~d3]', 'a.cpp [a.cpp]']);
 assert.equal(preview.groups[1].transient, null);
 
 // Kept: an edit keeps its tabs on every side, a double click the one clicked,
 // and opening it again to stay the one there.
 preview.open('d3', 1, true);
 assert.equal(preview.keep('d3'), true);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp d3 [d3]', 'a.cpp d3 [d3]'], 'an edit');
+assert.deepEqual(marked(preview), ['a.cpp d3 b.cpp [d3]', 'a.cpp d3 [d3]'], 'an edit');
 assert.equal(preview.keep('d3'), false, 'nothing left to keep');
 preview.open('e1', 0, true);
 preview.open('e1', 1, true);
 preview.keep('e1', 1);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp d3 ~e1 [~e1]', 'a.cpp d3 e1 [e1]'], 'a double click');
+assert.deepEqual(marked(preview), ['a.cpp d3 b.cpp ~e1 [~e1]', 'a.cpp d3 e1 [e1]'], 'a double click');
 preview.open('e1', 0);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp d3 e1 [e1]', 'a.cpp d3 e1 [e1]'], 'opened again to stay');
+assert.deepEqual(marked(preview), ['a.cpp d3 b.cpp e1 [e1]', 'a.cpp d3 e1 [e1]'], 'opened again to stay');
 preview.activate('a.cpp', 0);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp d3 e1 [a.cpp]', 'a.cpp d3 e1 [e1]'], 'kept, it no longer closes when left');
+assert.deepEqual(marked(preview), ['a.cpp d3 b.cpp e1 [a.cpp]', 'a.cpp d3 e1 [e1]'], 'kept, it no longer closes when left');
 // Opened to stay while a transient one is in front: the preview stays behind it.
 preview.open('f1', 0, true);
 assert.equal(preview.open('c.cpp', 0), null);
-assert.deepEqual(marked(preview), ['a.cpp b.cpp d3 e1 ~f1 c.cpp [c.cpp]', 'a.cpp d3 e1 [e1]']);
+assert.deepEqual(marked(preview), ['a.cpp d3 b.cpp e1 ~f1 c.cpp [c.cpp]', 'a.cpp d3 e1 [e1]']);
 
 // Dragged to the other side, it stays there, and leaves that side's preview available.
 const moved = new EditorLayout();
