@@ -79,7 +79,7 @@ await e2e({
   await expect(['~CMakeLists.txt*'], 'another explorer click replaces the preview in the same tab');
   await (await t.reveal(`${app}/src/main.cpp`)).dblclick();
   await t.openFile(`${app}/CMakeLists.txt`);
-  await expect(['CMakeLists.txt main.cpp*'], 'a double click in the explorer keeps its tab open');
+  await expect(['CMakeLists.txt* main.cpp'], 'double-clicked explorer files stay open');
   t.check('their names are upright', await fontStyle('main.cpp') === 'normal');
 
   // Find in Files: transient, in italics, with a hint.

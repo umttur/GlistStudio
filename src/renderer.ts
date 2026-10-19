@@ -1712,7 +1712,13 @@ const showDiffTab = (view: GroupView, tab: DiffTab): void => {
   const change = git.changeOf(tab.file);
   pane.rollback.hidden = tab.target !== null || !change || change.state === 'untracked' || change.state === 'conflict';
   pane.open.disabled = tab.target === null && change?.state === 'deleted';
-  if (viewer.getModel()?.modified === tab.modified) return;
+  // The preview can stay open behind a regular file. When it comes to the
+  // front again its model is still attached, but Monaco was hidden and needs
+  // its dimensions refreshed before it draws the diff decorations again.
+  if (viewer.getModel()?.modified === tab.modified) {
+    viewer.layout();
+    return;
+  }
   viewer.setModel({ original: tab.original, modified: tab.modified });
   // A diff opens at its first change, once it is known: of its two versions,
   // not of the two empty texts a tab shown before they arrive compares first
