@@ -955,7 +955,7 @@ const showGroups = (): void => {
 
 // How a tab comes to the front: as it is, such as clicked; opened to stay; or
 // opened transient, only to be looked at, as a diff or a search result is,
-// until another tab of its side comes to the front (editor-layout.ts).
+// until another preview takes its place or the user closes it (editor-layout.ts).
 type Opening = 'front' | 'keep' | 'transient';
 
 // Brings a tab to the front of a side, the one being worked in unless given.
@@ -972,8 +972,8 @@ const activateFile = (filePath: string, group = layout.focused, opening: Opening
   if (tab.kind === 'file') currentEditor().focus();
 };
 
-// A transient tab that closed as another took its place, or as its side
-// switched to another tab: what it showed is let go, unless another tab has it.
+// A transient tab that closed as another preview took its place: what it
+// showed is let go, unless another tab has it.
 const forgetClosed = (key: string | null): void => {
   const tab = key === null || layout.isOpen(key) ? undefined : openFiles.get(key);
   if (tab) forgetDocument(tab);
@@ -1252,7 +1252,7 @@ const pluginsView = new PluginsView(
   {
     hasProject: () => Boolean(activeProject),
     projectChanged: () => { void learnDependencies(); void loadProjectTree(); void git.refresh(); },
-    showReadme: (plugin) => openReadme(plugin),
+    showReadme: (plugin, transient) => openReadme(plugin, transient),
     updates: checkoutHooks,
   },
 );
@@ -1931,9 +1931,10 @@ const openDatabaseDiff = (key: string, request: DiffRequest): void => {
 };
 
 // A plugin's README in a tab of its own, asked for when the tab first opens.
-const openReadme = (plugin: GlistPlugin): void => openPageTab<ReadmeTab>(
+const openReadme = (plugin: GlistPlugin, transient = false): void => openPageTab<ReadmeTab>(
   { kind: 'readme', path: `readme:${plugin.name}`, name: plugin.name, page: { name: plugin.name, url: plugin.url }, version: 0 },
   async (tab) => { tab.page.readme = await window.glistAPI.pluginReadme(plugin.name); },
+  transient,
 );
 
 // An image file as a picture, in a tab of its own.
@@ -2703,7 +2704,13 @@ const createTreeRow = (entry: GlistFileEntry, depth: number, options: TreeRowOpt
     // toggle from the row's double-click handler.
     arrow.addEventListener('dblclick', (event) => { event.stopPropagation(); });
   } else {
-    row.addEventListener('click', select);
+    row.addEventListener('click', (event) => {
+      select(event);
+      // Like VS Code's Explorer: a plain click previews a file in the side's
+      // transient tab. Modifier clicks remain selection-only so choosing
+      // several entries does not repeatedly replace the preview.
+      if (!primaryKey(event) && !event.shiftKey) void openFile(entry.path, entry.name, true);
+    });
     row.addEventListener('dblclick', () => {
       select();
       void openFile(entry.path, entry.name);

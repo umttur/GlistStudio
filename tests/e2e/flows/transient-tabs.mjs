@@ -1,6 +1,6 @@
 // Transient tabs, as IntelliJ's and VS Code's preview tabs: a Find in Files or Search Everywhere
 // result and every git diff open in an italic tab that takes the place of the side's transient one
-// and closes when the side switches to another tab; a file open to stay is only brought forward; an
+// and stays available when the side switches to another tab; a file open to stay is only brought forward; an
 // edit, a double click on the tab or opening it again from the explorer keeps it; Split Right keeps
 // it; one transient tab per side; it does not come back with the session. Go to Definition and build
 // errors (which need clangd and a compiler) stay in gs-transient-tabs.mjs. (gs-transient-tabs.mjs)
@@ -70,10 +70,16 @@ await e2e({
   const change = (name) => page.locator('#commit-changes .change-row', { hasText: name }).first();
   const diffTabs = () => page.locator('.editor-tab[data-path^="diff:"]').evaluateAll((tabs) => tabs.map((each) => `${each.classList.contains('transient') ? '~' : ''}${each.dataset.path.replace(/^.*\//, '')}${each.classList.contains('active') ? '*' : ''}`));
 
-  // Opened from the explorer: to stay, upright.
-  await t.openFile(`${app}/src/main.cpp`);
+  // One click in the explorer previews in one italic tab; another replaces
+  // it, and a double click keeps that same tab open.
+  await (await t.reveal(`${app}/src/main.cpp`)).click();
+  await expect(['~main.cpp*'], 'one click in the explorer previews a file');
+  t.check('the preview name is italic', await fontStyle('main.cpp') === 'italic', await fontStyle('main.cpp'));
+  await (await t.reveal(`${app}/CMakeLists.txt`)).click();
+  await expect(['~CMakeLists.txt*'], 'another explorer click replaces the preview in the same tab');
+  await (await t.reveal(`${app}/src/main.cpp`)).dblclick();
   await t.openFile(`${app}/CMakeLists.txt`);
-  await expect(['main.cpp CMakeLists.txt*'], 'a double click in the explorer opens tabs to stay');
+  await expect(['main.cpp CMakeLists.txt*'], 'a double click in the explorer keeps its tab open');
   t.check('their names are upright', await fontStyle('main.cpp') === 'normal');
 
   // Find in Files: transient, in italics, with a hint.
@@ -84,10 +90,10 @@ await e2e({
   await searchEverywhere('shapes.cpp');
   await expect(['main.cpp CMakeLists.txt ~shapes.cpp*'], 'a Search Everywhere file takes the transient one\'s place');
   await tab('main.cpp').click();
-  await expect(['main.cpp* CMakeLists.txt'], 'switching to another tab closes the transient one');
+  await expect(['main.cpp* CMakeLists.txt ~shapes.cpp'], 'switching to another tab leaves the preview available');
   await tab('CMakeLists.txt').click();
   await searchEverywhere('main.cpp');
-  await expect(['main.cpp* CMakeLists.txt'], 'a file open to stay is brought to the front as it is');
+  await expect(['main.cpp* CMakeLists.txt ~shapes.cpp'], 'a file open to stay is brought to the front without closing the preview');
 
   // Every git diff: the commit view's changes, one after another in one tab; History's.
   await page.click('#commit-activity');
@@ -103,7 +109,7 @@ await e2e({
   await page.locator('.git-file-row', { hasText: 'shapes.cpp' }).first().click();
   await t.eventually('a commit\'s file in History opens transient, in the place of the last diff', diffTabs, same(['~shapes.cpp*']));
   await tab('main.cpp').click();
-  await t.eventually('leaving the diff closes it', diffTabs, same([]));
+  await t.eventually('leaving the diff keeps its preview available', diffTabs, same(['~shapes.cpp']));
   await t.showView('explorer');
 
   // Kept by an edit, by a double click on its name, by opening it again from the explorer.

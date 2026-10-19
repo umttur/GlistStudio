@@ -7,8 +7,9 @@ export interface EditorGroupState {
   tabs: string[];
   active: string | null;
   // The side's transient tab, as IntelliJ's and VS Code's preview tabs: a
-  // file or a diff only being looked at, which goes once another tab of the
-  // side comes to the front, unless it was kept first. One per side at most.
+  // file or a diff only being looked at. It stays until another preview takes
+  // its place or the user closes it, unless it is kept first. One per side at
+  // most.
   transient: string | null;
 }
 
@@ -75,26 +76,21 @@ export class EditorLayout {
   }
 
   // Brings a tab to the front of a group, adding it there first if need be,
-  // and focuses the group. The group's transient tab, if it was in front,
-  // closes, and its key is returned.
+  // and focuses the group. A preview behind it remains available until the
+  // next preview replaces it or the user closes it.
   activate(key: string, group = this.focused): string | null {
     const target = this.groups[group];
     if (!target) return null;
     this.add(key, group);
-    const left = target.transient !== null && target.transient !== key && target.active === target.transient ? target.transient : null;
-    if (left !== null) {
-      target.tabs.splice(target.tabs.indexOf(left), 1);
-      target.transient = null;
-    }
     target.active = key;
     this.focused = group;
-    return left;
+    return null;
   }
 
   // Opens a tab in front of a group: transient, or to stay, which a transient
   // tab of it there then does too. One the group has for good is only brought
-  // to the front, never made transient. Returns the key of a tab that closed,
-  // as add and activate do.
+  // to the front, never made transient. Returns the key of a preview replaced
+  // by another preview.
   open(key: string, group = this.focused, transient = false): string | null {
     const replaced = this.add(key, group, transient);
     const left = this.activate(key, group);
@@ -130,8 +126,7 @@ export class EditorLayout {
 
   // Moves a tab within its group or to another one, before a tab there or at
   // its end. A group one past the last is a new one to the right. Moved to
-  // another group, the tab stays there for good and comes to the front, so a
-  // transient tab in front there closes, and its key is returned.
+  // another group, the tab stays there for good and comes to the front.
   move(key: string, from: number, to: number, before?: string): string | null {
     const source = this.groups[from];
     if (!source?.tabs.includes(key) || to > this.groups.length || to >= maxGroups) return null;
@@ -144,31 +139,23 @@ export class EditorLayout {
     const sourceIndex = source.tabs.indexOf(key);
     source.tabs.splice(sourceIndex, 1);
     if (from !== to && source.active === key) source.active = source.tabs[Math.min(sourceIndex, source.tabs.length - 1)] ?? null;
-    let left: string | null = null;
     if (from !== to) {
       if (source.transient === key) source.transient = null;
       if (target.transient === key) target.transient = null;
-      if (target.transient !== null && target.active === target.transient) left = target.transient;
     }
     const at = before && before !== key ? target.tabs.indexOf(before) : -1;
     target.tabs.splice(at < 0 ? target.tabs.length : at, 0, key);
-    // Dropped before it, the moved tab is where the transient one was.
-    if (left !== null) {
-      target.tabs.splice(target.tabs.indexOf(left), 1);
-      target.transient = null;
-    }
     // Moved to another group, it comes to the front there; reordered, nothing else changes.
     if (from !== to) {
       target.active = key;
       this.focused = to;
     }
     this.dropEmpty();
-    return left;
+    return null;
   }
 
   // Opens a tab of the same file in the group beside, as Split Right does,
-  // making that group if there is only one. Both tabs stay for good. Returns
-  // the key of a transient tab it closed there.
+  // making that group if there is only one. Both tabs stay for good.
   split(key: string, from = this.focused): string | null {
     if (!this.groups[from]?.tabs.includes(key)) return null;
     const to = from + 1 < maxGroups ? from + 1 : from - 1;

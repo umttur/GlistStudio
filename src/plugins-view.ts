@@ -14,8 +14,8 @@ export interface PluginsHooks {
   hasProject(): boolean;
   // A plugin was added to or taken out of the project, or installed.
   projectChanged(): void;
-  // Opens its README in a tab.
-  showReadme(plugin: GlistPlugin): void;
+  // Opens its README as a preview, or keeps it open.
+  showReadme(plugin: GlistPlugin, transient: boolean): void;
   updates: CheckoutUpdateHooks;
 }
 
@@ -178,17 +178,22 @@ export class PluginsView {
   private row(plugin: GlistPlugin, gitFound: boolean): HTMLElement {
     const row = document.createElement('div');
     row.className = 'plugin-row';
-    // Anywhere but its buttons, a click or Enter shows its README.
+    // Anywhere but its buttons, one click previews its README and a double
+    // click keeps it open. Keyboard activation opens it to stay.
     row.tabIndex = 0;
     row.title = t('readmeShow');
     row.addEventListener('click', (event) => {
       if (event.target instanceof Element && event.target.closest('.plugin-action')) return;
-      this.hooks.showReadme(plugin);
+      this.hooks.showReadme(plugin, true);
+    });
+    row.addEventListener('dblclick', (event) => {
+      if (event.target instanceof Element && event.target.closest('.plugin-action')) return;
+      this.hooks.showReadme(plugin, false);
     });
     row.addEventListener('keydown', (event) => {
       if (event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) return;
       event.preventDefault();
-      this.hooks.showReadme(plugin);
+      this.hooks.showReadme(plugin, false);
     });
     const busy = this.busy.has(plugin.name);
     const button = (iconName: IconName, label: string, title: string, className: string, run: () => void): HTMLButtonElement => {
