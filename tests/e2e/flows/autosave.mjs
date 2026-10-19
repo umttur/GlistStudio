@@ -35,6 +35,7 @@ await e2e({
   await page.keyboard.press('Escape');
   await page.locator(`#file-tree .tree-row[data-path="${app}/CMakeLists.txt"]`).click();
   await t.eventually('clicking the explorer saves it', () => onDisk(), (text) => text.includes('// one'));
+  await page.locator('.editor-tab', { hasText: 'main.cpp' }).click();
   await typeAtEnd(' // two');
   await page.locator('.output-tab[data-panel="terminal"]').click();
   await t.eventually('going to the terminal saves it', () => onDisk(), (text) => text.includes('// two'));

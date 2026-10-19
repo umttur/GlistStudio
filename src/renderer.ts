@@ -960,7 +960,7 @@ type Opening = 'front' | 'keep' | 'transient';
 
 // Brings a tab to the front of a side, the one being worked in unless given.
 // A file with unsaved changes never opens transient, as leaving would close it.
-const activateFile = (filePath: string, group = layout.focused, opening: Opening = 'front'): void => {
+const activateFile = (filePath: string, group = layout.focused, opening: Opening = 'front', focusEditor = true): void => {
   const tab = openFiles.get(filePath);
   if (!tab) return;
   const closed = opening === 'front' ? layout.activate(filePath, group)
@@ -969,7 +969,7 @@ const activateFile = (filePath: string, group = layout.focused, opening: Opening
   forgetClosed(closed);
   renderTabs();
   updateButtons();
-  if (tab.kind === 'file') currentEditor().focus();
+  if (tab.kind === 'file' && focusEditor) currentEditor().focus();
 };
 
 // A transient tab that closed as another preview took its place: what it
@@ -1548,9 +1548,9 @@ const saveFile = (file: OpenFile): Promise<void> => {
 let navigation = 0;
 
 // Opens a file in a tab to stay, or transient: a search result, a definition
-// or an error looked at, until another tab of the side comes to the front. A
-// database's always stays: closing it would ask about its changes waiting.
-const openFile = async (filePath: string, name: string, transient = false): Promise<boolean> => {
+// or an error looked at, until another preview takes its place or the user
+// closes it. A database's always stays: closing it would ask about its changes waiting.
+const openFile = async (filePath: string, name: string, transient = false, focusEditor = true): Promise<boolean> => {
   if (imageType(filePath)) { openImage(filePath, transient); return true; }
   if (modelType(filePath)) { openModel(filePath, transient); return true; }
   if (isDatabaseFile(filePath)) { openDatabase(filePath); return true; }
@@ -1565,7 +1565,7 @@ const openFile = async (filePath: string, name: string, transient = false): Prom
       if (!layout.isOpen(file.path) && openFiles.get(file.path) === file) forgetDocument(file);
       return false;
     }
-    activateFile(file.path, layout.focused, transient ? 'transient' : 'keep');
+    activateFile(file.path, layout.focused, transient ? 'transient' : 'keep', focusEditor);
     return true;
   } catch (error) {
     noticeFailed('fileOpenFailed', error, name);
@@ -2709,7 +2709,7 @@ const createTreeRow = (entry: GlistFileEntry, depth: number, options: TreeRowOpt
       // Like VS Code's Explorer: a plain click previews a file in the side's
       // transient tab. Modifier clicks remain selection-only so choosing
       // several entries does not repeatedly replace the preview.
-      if (!primaryKey(event) && !event.shiftKey) void openFile(entry.path, entry.name, true);
+      if (!primaryKey(event) && !event.shiftKey) void openFile(entry.path, entry.name, true, false);
     });
     row.addEventListener('dblclick', () => {
       select();

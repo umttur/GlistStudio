@@ -84,10 +84,10 @@ await e2e({
   t.check('scrolled, Open File puts the first line in sight at the same height', anchor && landed && landed.line === anchor.line && landed.text === anchor.text, { anchor, landed });
   await t.eventually('with the cursor on it', cursorLine, (line) => line === anchor?.line);
 
-  // 2. A line clicked in the diff, lower on screen: that line, at its height. (The diff was a
-  // transient tab, which the file took the place of.)
-  t.check('the diff\'s transient tab gave its place to the file', await page.locator('.editor-tab.diff').count() === 0);
-  await page.locator('#commit-changes .change-row', { hasText: 'main.cpp' }).first().click();
+  // 2. A line clicked in the diff, lower on screen: that line, at its height. The preview remains
+  // available behind the file until another preview replaces it or the user closes it.
+  t.check('the diff preview remains available behind the file', await page.locator('.editor-tab.diff:not(.active)').count() === 1);
+  await page.locator('.editor-tab.diff').click();
   await page.locator(diffSide).waitFor();
   await t.settle(() => inSight(diffSide), (list) => list[0]?.text === '// added 1');
   await computed();

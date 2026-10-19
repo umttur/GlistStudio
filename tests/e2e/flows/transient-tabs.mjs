@@ -79,21 +79,21 @@ await e2e({
   await expect(['~CMakeLists.txt*'], 'another explorer click replaces the preview in the same tab');
   await (await t.reveal(`${app}/src/main.cpp`)).dblclick();
   await t.openFile(`${app}/CMakeLists.txt`);
-  await expect(['main.cpp CMakeLists.txt*'], 'a double click in the explorer keeps its tab open');
+  await expect(['CMakeLists.txt main.cpp*'], 'a double click in the explorer keeps its tab open');
   t.check('their names are upright', await fontStyle('main.cpp') === 'normal');
 
   // Find in Files: transient, in italics, with a hint.
   await findInFiles('needle_token');
-  await expect(['main.cpp CMakeLists.txt ~finder.cpp*'], 'a Find in Files result opens transient, in front');
+  await expect(['CMakeLists.txt main.cpp ~finder.cpp*'], 'a Find in Files result opens transient, in front');
   t.check('its name in italics', await fontStyle('finder.cpp') === 'italic', await fontStyle('finder.cpp'));
   t.check('its tooltip says how to keep it', /Double-click to keep it open/.test(await tab('finder.cpp').getAttribute('title')), await tab('finder.cpp').getAttribute('title'));
   await searchEverywhere('shapes.cpp');
-  await expect(['main.cpp CMakeLists.txt ~shapes.cpp*'], 'a Search Everywhere file takes the transient one\'s place');
+  await expect(['CMakeLists.txt main.cpp ~shapes.cpp*'], 'a Search Everywhere file takes the transient one\'s place');
   await tab('main.cpp').click();
-  await expect(['main.cpp* CMakeLists.txt ~shapes.cpp'], 'switching to another tab leaves the preview available');
+  await expect(['CMakeLists.txt main.cpp* ~shapes.cpp'], 'switching to another tab leaves the preview available');
   await tab('CMakeLists.txt').click();
   await searchEverywhere('main.cpp');
-  await expect(['main.cpp* CMakeLists.txt ~shapes.cpp'], 'a file open to stay is brought to the front without closing the preview');
+  await expect(['CMakeLists.txt main.cpp* ~shapes.cpp'], 'a file open to stay is brought to the front without closing the preview');
 
   // Every git diff: the commit view's changes, one after another in one tab; History's.
   await page.click('#commit-activity');
@@ -114,30 +114,30 @@ await e2e({
 
   // Kept by an edit, by a double click on its name, by opening it again from the explorer.
   await findInFiles('needle_token');
-  await expect(['main.cpp CMakeLists.txt ~finder.cpp*'], 'transient before the edit');
+  await expect(['CMakeLists.txt main.cpp ~finder.cpp*'], 'transient before the edit');
   await group(0).locator('.view-lines').click();
   await page.keyboard.press(`${mod}+ArrowUp`);
   await page.keyboard.type('// kept\n');
-  await expect(['main.cpp CMakeLists.txt finder.cpp*'], 'an edit keeps it');
+  await expect(['CMakeLists.txt main.cpp finder.cpp*'], 'an edit keeps it');
   t.check('upright once kept', await fontStyle('finder.cpp') === 'normal');
   await searchEverywhere('shapes.cpp');
-  await expect(['main.cpp CMakeLists.txt finder.cpp ~shapes.cpp*'], 'transient before the double click');
+  await expect(['CMakeLists.txt main.cpp finder.cpp ~shapes.cpp*'], 'transient before the double click');
   await tab('shapes.cpp').dblclick();
-  await expect(['main.cpp CMakeLists.txt finder.cpp shapes.cpp*'], 'a double click on its name keeps it');
+  await expect(['CMakeLists.txt main.cpp finder.cpp shapes.cpp*'], 'a double click on its name keeps it');
   await searchEverywhere('shapes.h');
-  await expect(['main.cpp CMakeLists.txt finder.cpp shapes.cpp ~shapes.h*'], 'transient before the explorer');
+  await expect(['CMakeLists.txt main.cpp finder.cpp shapes.cpp ~shapes.h*'], 'transient before the explorer');
   await (await t.reveal(`${app}/src/shapes.h`)).dblclick();
-  await expect(['main.cpp CMakeLists.txt finder.cpp shapes.cpp shapes.h*'], 'a double click in the explorer keeps it, in one tab');
+  await expect(['CMakeLists.txt main.cpp finder.cpp shapes.cpp shapes.h*'], 'a double click in the explorer keeps it, in one tab');
 
   // Split Right keeps it on both sides; one transient tab per side.
   await searchEverywhere('enemy_spawn', 'enemy_spawn_wave_controller.cpp');
   await tab('enemy_spawn_wave_controller.cpp').click({ button: 'right' });
   await t.contextItem('Split Right').click();
-  await expect(['main.cpp CMakeLists.txt finder.cpp shapes.cpp shapes.h enemy_spawn_wave_controller.cpp*', 'enemy_spawn_wave_controller.cpp*'], 'Split Right keeps it, on both sides');
+  await expect(['CMakeLists.txt main.cpp finder.cpp shapes.cpp shapes.h enemy_spawn_wave_controller.cpp*', 'enemy_spawn_wave_controller.cpp*'], 'Split Right keeps it, on both sides');
   await searchEverywhere('player_inventory', 'player_inventory_drag_and_drop.cpp');
   await tab('main.cpp').click();
   await searchEverywhere('background_music', 'background_music_crossfade_player.cpp');
-  await expect(['main.cpp CMakeLists.txt finder.cpp shapes.cpp shapes.h enemy_spawn_wave_controller.cpp ~background_music_crossfade_player.cpp*', 'enemy_spawn_wave_controller.cpp ~player_inventory_drag_and_drop.cpp*'], 'each side has its own transient tab');
+  await expect(['CMakeLists.txt main.cpp finder.cpp shapes.cpp shapes.h enemy_spawn_wave_controller.cpp ~background_music_crossfade_player.cpp*', 'enemy_spawn_wave_controller.cpp ~player_inventory_drag_and_drop.cpp*'], 'each side has its own transient tab');
   t.check('in italics on the right too', await fontStyle('player_inventory_drag_and_drop.cpp', 1) === 'italic');
 
   // Not saved with the session: reopened, the kept tabs come back and the transient ones do not.
@@ -146,6 +146,6 @@ await e2e({
     (session) => session?.groups?.length === 2 && session.groups.every((each) => each.active?.endsWith('enemy_spawn_wave_controller.cpp')));
   await t.load();
   await t.openProject('TabsApp');
-  await expect(['main.cpp CMakeLists.txt finder.cpp shapes.cpp shapes.h enemy_spawn_wave_controller.cpp*', 'enemy_spawn_wave_controller.cpp*'],
+  await expect(['CMakeLists.txt main.cpp finder.cpp shapes.cpp shapes.h enemy_spawn_wave_controller.cpp*', 'enemy_spawn_wave_controller.cpp*'],
     'reopened, the kept tabs come back and the transient ones do not; the tab beside each is in front', 8000);
 });
